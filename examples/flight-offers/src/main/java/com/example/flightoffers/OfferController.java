@@ -1,5 +1,6 @@
 package com.example.flightoffers;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
@@ -23,8 +24,9 @@ public class OfferController {
     }
 
     @GetMapping
-    public List<Offer> search(@RequestParam String origin, @RequestParam String destination) {
-        return service.search(origin, destination);
+    public List<Offer> search(@RequestParam String origin, @RequestParam String destination,
+            @RequestParam(required = false) String carrier, @RequestParam(required = false) BigDecimal maxPrice) {
+        return service.search(origin, destination, carrier, maxPrice);
     }
 
     @GetMapping("/{id}")

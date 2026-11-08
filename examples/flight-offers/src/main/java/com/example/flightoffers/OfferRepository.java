@@ -1,5 +1,7 @@
 package com.example.flightoffers;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,9 +33,19 @@ public class OfferRepository {
         this.insert = new SimpleJdbcInsert(jdbc).withTableName("offers").usingGeneratedKeyColumns("id");
     }
 
-    public List<Offer> search(String origin, String destination) {
-        return jdbc.query(SELECT_OFFER + " WHERE origin = ? AND destination = ? ORDER BY price",
-                OFFER_MAPPER, origin, destination);
+    public List<Offer> search(String origin, String destination, String carrier, BigDecimal maxPrice) {
+        StringBuilder sql = new StringBuilder(SELECT_OFFER).append(" WHERE origin = ? AND destination = ?");
+        List<Object> args = new ArrayList<>(List.of(origin, destination));
+        if (carrier != null) {
+            sql.append(" AND carrier = ?");
+            args.add(carrier);
+        }
+        if (maxPrice != null) {
+            sql.append(" AND price <= ?");
+            args.add(maxPrice);
+        }
+        sql.append(" ORDER BY price");
+        return jdbc.query(sql.toString(), OFFER_MAPPER, args.toArray());
     }
 
     public Optional<Offer> findById(long id) {

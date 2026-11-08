@@ -1,5 +1,6 @@
 package com.example.flightoffers;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -18,8 +19,8 @@ public class OfferService {
         this.repository = repository;
     }
 
-    public List<Offer> search(String origin, String destination) {
-        return repository.search(requireIata(origin), requireIata(destination));
+    public List<Offer> search(String origin, String destination, String carrier, BigDecimal maxPrice) {
+        return repository.search(requireIata(origin), requireIata(destination), carrier, maxPrice);
     }
 
     public Offer getById(long id) {

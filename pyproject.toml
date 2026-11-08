@@ -10,7 +10,7 @@ readme = "DESIGN.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2", "pyyaml"]
+dependencies = ["pydantic>=2", "pyyaml", "mcp>=2.3,<3"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]

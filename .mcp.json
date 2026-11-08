@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sift-mcp": {
+      "command": "python",
+      "args": ["-m", "sift.mcp_server"]
+    }
+  }
+}

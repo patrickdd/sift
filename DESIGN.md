@@ -321,15 +321,27 @@ with a coverage banner and never says "No findings." unqualified.
 Diff edge cases: an unknown base falls back to `HEAD`, stated in the report; a repo with no
 commits diffs against the empty tree. Symlinked targets are skipped and noted.
 
+**MCP server [built]** (`src/sift/mcp_server.py`, stdio, registered as `sift-mcp` in `.mcp.json`).
+Every tool calls the same core functions as the CLI, and none modifies source files: writes go
+only to `.sift/out`, and a symlinked `.sift` or `.sift/out` is refused. The server uses
+`CLAUDE_PROJECT_DIR` when set, otherwise its working directory.
+
+| Tool | Returns |
+|---|---|
+| `scan(base="main", paths=None, all_files=False)` | `ScanPacket`: mode, base, `coverage_complete`, notes, tools, cluster summaries, packet text, `findings_path`; saves `.sift/out/findings.json` |
+| `get_finding(id)` | the Finding (by finding or cluster id) from the last scan, plus an enveloped, secret-masked context window |
+| `list_tools()` | each adapter's name, version, binary and availability |
+| `export(format: "sarif"\|"md")` | the path written under `.sift/out`, from the last scan, untriaged |
+
 ## 10. Repo layout
 
 ```
 pyproject.toml  LICENSE  DESIGN.md                                        [built]
 src/sift/
   __init__.py  cli.py  diff.py  finding.py  normalize.py  pipeline.py
-  dedupe.py  packet.py  report.py  sarif.py                              [built]
+  dedupe.py  packet.py  report.py  sarif.py  config.py  store.py          [built]
   adapters/{__init__,base,pmd,semgrep,ruff,bandit,gitleaks}.py            [built]
-  mcp_server.py                                                           [planned: phase 3]
+  mcp_server.py                                                           [built]
 rules/            -> installed as package data `sift.rules`               [built]
   __init__.py  families.yaml
   java/<rule>.yaml + <rule>.java     (6 rules + test cases)
@@ -338,7 +350,7 @@ rules/            -> installed as package data `sift.rules`               [built
 tests/  (+ tests/fixtures/<tool>.json real tool output)                   [built]
 .claude-plugin/plugin.json  hooks/hooks.json  hooks/post_edit.py
 commands/review.md  agents/triager.md                                     [built]
-.mcp.json                                                                 [planned: phase 3]
+.mcp.json  docs/CODEX.md                                                 [built]
 bench/{ground_truth.yaml,bench.py,results.md}                             [planned: phase 4]
 examples/flight-offers/ (Spring Boot demo)  examples/pyservice/           [planned: phase 4]
 docs/ADDING_AN_ADAPTER.md  README.md                                      [planned: phase 5]
@@ -349,7 +361,7 @@ docs/ADDING_AN_ADAPTER.md  README.md                                      [plann
 `.java` and `.py` test cases are not. `normalize.rules_dir()` resolves it via
 `importlib.resources`, so it works from editable, wheel and pipx installs alike (a test builds
 a wheel, installs it into a fresh venv and runs a scan). Python ≥ 3.12; dependencies are only
-pydantic ≥ 2 and PyYAML (dev: pytest, ruff).
+pydantic ≥ 2, PyYAML and `mcp` 2.x (dev: pytest, ruff).
 
 ## 11. Configuration and precedence
 
@@ -452,6 +464,7 @@ That is a prompt-level control. `allowed-tools` pre-approves tools; it does not 
 | `java.jdbc-string-concat` also flags a parameter passed directly as the SQL | it is also an injection; taint mode is simpler and stricter |
 | Python ≥ 3.12 instead of 3.15 | wider adoption; nothing needs newer syntax (suite passes on 3.12.13 and 3.15.2) |
 | Extra modules `normalize.py` and `pipeline.py` | keeps every module under ~200 lines |
+| `MCPServer` from `mcp.server.mcpserver` instead of FastMCP | the `mcp` 2.x SDK renamed it and removed `mcp.server.fastmcp` |
 
 ## 14. Benchmark design
 
@@ -490,7 +503,7 @@ files `docs/examples/Bad.java` and `docs/examples/bad.py`.
 - Nix flake for tool pinning
 - Bazel test command
 - GitHub code-scanning SARIF upload (Tier 4 CI gate)
-- Codex compatibility via the MCP server + AGENTS.md
+- Verify the Codex setup in `docs/CODEX.md` against a real Codex install
 - **`respect_suppressions` config**: opt back in to honoring `noqa`/`nosec`/`NOPMD`/… for
   teams with vetted legacy suppressions
 - **OS-level network sandboxing** for tool subprocesses (e.g. `sandbox-exec` / network

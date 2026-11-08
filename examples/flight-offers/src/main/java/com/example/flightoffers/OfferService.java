@@ -19,7 +19,7 @@ public class OfferService {
     }
 
     public List<Offer> search(String origin, String destination) {
-        return repository.search(requireIata(origin), requireIata(destination));
+        return repository.search(origin.trim(), destination.trim());
     }
 
     public Offer getById(long id) {

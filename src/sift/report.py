@@ -6,20 +6,32 @@ listed as untriaged, so nothing disappears silently.
 """
 
 import json
+import posixpath
 import re
 from pathlib import Path
 
 from sift.adapters.base import warn
 from sift.dedupe import Cluster
+from sift.diff import GitError, git
 from sift.finding import SEVERITIES, ToolRun, TriageResult
 from sift.normalize import read_lines
 
 CITATION = re.compile(r"([\w./\\-]+\.\w+):(\d+)")
 NO_CITATION = "dismissal rejected by sift: rationale cites no path:line evidence"
 BAD_CITATION = "dismissal rejected by sift: no cited path:line exists in the repository"
-SELF_CITATION = "dismissal rejected by sift: a high/critical dismissal must cite code outside the flagged lines"
+SELF_CITATION = (
+    "dismissal rejected by sift: a high/critical dismissal must cite code outside the flagged lines, "
+    "in a file other than build or documentation metadata"
+)
 SECRET_NOTE = "secret finding: withheld from the triager; a human must confirm and rotate it"
 _DISMISSIVENESS = {"false_positive": 0, "true_positive": 1, "needs_human": 2}
+# A real line in one of these says nothing about a guard on the data flow.
+_GENERIC_FILE = re.compile(
+    r"(?:^|/)(?:pom\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|package(?:-lock)?\.json"
+    r"|pyproject\.toml|uv\.lock|poetry\.lock|requirements[^/]*\.txt|license[^/]*|readme[^/]*|changelog[^/]*"
+    r"|\.gitignore|[^/]*\.md)$",
+    re.IGNORECASE,
+)
 
 
 def load_triage(path: Path) -> list[TriageResult]:
@@ -28,28 +40,80 @@ def load_triage(path: Path) -> list[TriageResult]:
     return [TriageResult.model_validate(item) for item in items]
 
 
-def _dismissal_problem(c: Cluster, rationale: str, root: Path | None) -> str | None:
+def tracked_files(root: Path) -> frozenset[str] | None:
+    """Repo-relative files git knows about (tracked, or untracked and not ignored); None outside git.
+
+    Untracked files count because a review covers them. Ignored files do not, so a build output
+    such as target/classes cannot change what a citation resolves to.
+    """
+    try:
+        out = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], root)
+    except (GitError, OSError):
+        return None
+    return frozenset(p for p in out.split("\0") if p)
+
+
+def canonical_citation(cited: str, root: Path, tracked: frozenset[str] | None) -> str | None:
+    """The repo-relative path a citation names, or None if it is not an acceptable file.
+
+    Rejected: absolute paths, paths leaving the repo, symlinks anywhere along the path, files git
+    does not list, and bare filenames that do not match exactly one listed file. Outside git
+    (tracked is None) a path must simply exist under root, and a bare name means a file at the root.
+    """
+    path = cited.replace("\\", "/")
+    if path.startswith("/") or re.match(r"[A-Za-z]:", path):
+        return None
+    norm = posixpath.normpath(path)
+    if norm == ".." or norm.startswith("../"):
+        return None
+    if tracked is not None:
+        if "/" not in path:
+            matches = [t for t in tracked if posixpath.basename(t) == norm]
+            if len(matches) != 1:
+                return None
+            norm = matches[0]
+        elif norm not in tracked:
+            return None
+    current = root
+    for part in norm.split("/"):
+        current = current / part
+        if current.is_symlink():
+            return None
+    return norm if current.is_file() else None
+
+
+def _is_outside_evidence(c: Cluster, path: str, line: int) -> bool:
+    if path == c.path:
+        return not c.start_line <= line <= c.end_line
+    return not _GENERIC_FILE.search(path)
+
+
+def _dismissal_problem(
+    c: Cluster, rationale: str, root: Path | None, tracked: frozenset[str] | None = None
+) -> str | None:
     cited = [(p, int(n)) for p, n in CITATION.findall(rationale)]
     if not cited:
         return NO_CITATION
     if root is None:  # no repository at hand (unit use): only the shape can be checked
         return None
     base = root.resolve()
-    real = [
-        (p, n) for p, n in cited
-        if (base / p).resolve().is_relative_to(base) and 1 <= n <= len(read_lines(base / p))
-    ]
+    real = []
+    for raw, line in cited:
+        path = canonical_citation(raw, base, tracked)
+        if path is not None and 1 <= line <= len(read_lines(base / path)):
+            real.append((path, line))
     if not real:
         return BAD_CITATION
-    if c.severity in ("critical", "high") and all(
-        p.removeprefix("./") == c.path and c.start_line <= n <= c.end_line for p, n in real
-    ):
+    if c.severity in ("critical", "high") and not any(_is_outside_evidence(c, p, n) for p, n in real):
         return SELF_CITATION
     return None
 
 
 def resolve(
-    clusters: list[Cluster], triage: list[TriageResult] | None, root: Path | None = None
+    clusters: list[Cluster],
+    triage: list[TriageResult] | None,
+    root: Path | None = None,
+    tracked: frozenset[str] | None = None,
 ) -> dict[str, TriageResult]:
     """Effective verdict per cluster id, after enforcement. Missing ids are untriaged.
 
@@ -57,12 +121,16 @@ def resolve(
     overwrite a real verdict. Secret clusters are always needs_human.
     """
     known = {c.id: c for c in clusters}
+    if root is not None and tracked is None:
+        tracked = tracked_files(root.resolve())
     out: dict[str, TriageResult] = {}
     for t in triage or []:
         if t.id not in known:
             warn(f"triage verdict for unknown cluster id {t.id!r} ignored")
             continue
-        if t.verdict == "false_positive" and (problem := _dismissal_problem(known[t.id], t.rationale, root)):
+        dismissed = t.verdict == "false_positive"
+        problem = _dismissal_problem(known[t.id], t.rationale, root, tracked) if dismissed else None
+        if problem:
             t = t.model_copy(update={"verdict": "needs_human", "rationale": f"{t.rationale} ({problem})"})
         if t.id not in out or _DISMISSIVENESS[t.verdict] > _DISMISSIVENESS[out[t.id].verdict]:
             out[t.id] = t

@@ -328,3 +328,82 @@ def test_hook_exits_zero_when_input_is_bad():
     proc = subprocess.run([sys.executable, str(REPO / "hooks" / "post_edit.py")], input="not json",
                           capture_output=True, text=True)
     assert proc.returncode == 0
+
+
+# --- reviews/phase4.md: citation canonicalization ---------------------------------------------
+
+
+def _high_finding(repo):
+    (repo / "src").mkdir()
+    (repo / "src" / "a.py").write_text("x = 1\ny = 2\nz = 3\n")
+    (repo / "src" / "guard.py").write_text("check = 1\n")
+    (repo / "pom.xml").write_text("<project/>\n")
+    commit_all(repo)
+    finding = make_finding(
+        tool="semgrep", tool_version="1", rule_id="r", message="m", severity="high",
+        raw_path="src/a.py", start_line=2, end_line=2, repo_root=repo, category="security",
+    )
+    return cluster(dedupe([finding]))[0]
+
+
+def _after_checks(repo, c, rationale):
+    vote = TriageResult(id=c.id, verdict="false_positive", confidence=90, rationale=rationale)
+    return resolve([c], [vote], repo)[c.id]
+
+
+def test_dotdot_cannot_disguise_a_self_citation(repo):
+    c = _high_finding(repo)
+    result = _after_checks(repo, c, f"safe, see src/../{c.path}:2")
+    assert result.verdict == "needs_human" and "outside the flagged lines" in result.rationale
+
+
+@pytest.mark.parametrize("template", ["../outside.py:1", "{repo}/src/guard.py:1"])
+def test_citation_outside_the_repo_is_rejected(repo, template):
+    c = _high_finding(repo)
+    (repo.parent / "outside.py").write_text("x = 1\n")
+    result = _after_checks(repo, c, "safe, see " + template.format(repo=repo))
+    assert result.verdict == "needs_human" and "exists in the repository" in result.rationale
+
+
+def test_symlinked_citation_is_rejected(repo):
+    c = _high_finding(repo)
+    (repo / "link.py").symlink_to(repo / "src" / "guard.py")
+    commit_all(repo, "link")
+    assert _after_checks(repo, c, "safe, see link.py:1").verdict == "needs_human"
+
+
+def test_ignored_file_cannot_be_cited(repo):
+    c = _high_finding(repo)
+    (repo / ".gitignore").write_text("build/\n")
+    (repo / "build").mkdir()
+    (repo / "build" / "gen.py").write_text("x = 1\n")
+    assert _after_checks(repo, c, "safe, see build/gen.py:1").verdict == "needs_human"
+
+
+def test_self_citation_plus_unrelated_real_line_is_rejected(repo):
+    c = _high_finding(repo)
+    result = _after_checks(repo, c, f"safe, see {c.path}:2 and pom.xml:1")
+    assert result.verdict == "needs_human" and "outside the flagged lines" in result.rationale
+
+
+def test_real_outside_citation_is_accepted(repo):
+    c = _high_finding(repo)
+    assert _after_checks(repo, c, "guard at src/guard.py:1 feeds it").verdict == "false_positive"
+
+
+def test_unique_bare_filename_resolves(repo):
+    c = _high_finding(repo)
+    assert _after_checks(repo, c, "guard at guard.py:1 feeds it").verdict == "false_positive"
+
+
+def test_bare_filename_cannot_disguise_a_self_citation(repo):
+    c = _high_finding(repo)
+    assert _after_checks(repo, c, "safe, see a.py:2").verdict == "needs_human"
+
+
+def test_ambiguous_bare_filename_is_rejected(repo):
+    c = _high_finding(repo)
+    (repo / "other").mkdir()
+    (repo / "other" / "guard.py").write_text("check = 2\n")
+    commit_all(repo, "dup")
+    assert _after_checks(repo, c, "guard at guard.py:1 feeds it").verdict == "needs_human"

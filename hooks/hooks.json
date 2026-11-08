@@ -1,0 +1,48 @@
+{
+  "description": "sift Tier 1: new high-severity findings on the edited file",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit(**/*.py)",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/post_edit.py"
+            ],
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "if": "Edit(**/*.java)",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/post_edit.py"
+            ],
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "if": "Write(**/*.py)",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/post_edit.py"
+            ],
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "if": "Write(**/*.java)",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/post_edit.py"
+            ],
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

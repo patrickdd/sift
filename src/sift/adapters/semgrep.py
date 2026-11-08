@@ -39,7 +39,7 @@ class SemgrepAdapter(ToolAdapter):
     name = "semgrep"
     binaries = ("opengrep", "semgrep")  # prefer the LGPL fork when present
     languages = tuple(LANG_DIRS)
-    single_file_ok = False  # not part of Tier 1 (startup cost)
+    single_file_ok = True  # one-file run fits the Tier 1 budget; numbers in hooks/README.md
 
     def commands(self, binary: str, paths: list[str], repo_root: Path) -> list[list[str]]:
         langs = {LANG_DIRS[Path(p).suffix.lower()] for p in paths if Path(p).suffix.lower() in LANG_DIRS}

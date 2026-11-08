@@ -4,7 +4,7 @@
 rules:
   - id: java.weak-hash
     languages: [java]
-    severity: WARNING
+    severity: ERROR
     message: >-
       MessageDigest.getInstance($ALG) uses a broken hash algorithm. Use SHA-256 or
       stronger, and a password KDF (bcrypt/scrypt/Argon2) for passwords.

@@ -97,3 +97,25 @@ def test_entry_point_installed():
     if proc.returncode != 0:
         pytest.skip("sift entry point not on PATH (run inside the venv)")
     assert proc.stdout.startswith("sift ")
+
+
+def test_scan_output_file_and_report_test_section(capsys, monkeypatch, repo):
+    code, out, _ = run(capsys, monkeypatch, repo, "scan", "--format", "json", "--output", "o/scan.json")
+    assert code == 0 and out == ""
+    (repo / "t.json").write_text("[]")
+    (repo / "test.log").write_text("".join(f"line{i}\n" for i in range(40)))
+    code, _, _ = run(capsys, monkeypatch, repo, "report", "--triage", "t.json", "--findings", "o/scan.json",
+                     "--out", "o", "--md-name", "review.md", "--test-status", "failed",
+                     "--test-output", "test.log")
+    report = (repo / "o" / "review.md").read_text()
+    assert code == 0 and "## Tests: failed" in report
+    assert "line39" in report and "line9\n" not in report
+
+
+def test_report_skipped_tests_line(capsys, monkeypatch, repo):
+    run(capsys, monkeypatch, repo, "scan", "--format", "json", "--output", "o/scan.json")
+    (repo / "t.json").write_text("[]")
+    code, _, _ = run(capsys, monkeypatch, repo, "report", "--triage", "t.json", "--findings", "o/scan.json",
+                     "--out", "o", "--test-status", "skipped")
+    assert code == 0
+    assert "## Tests: skipped (no test_command configured)" in (repo / "o" / "report.md").read_text()

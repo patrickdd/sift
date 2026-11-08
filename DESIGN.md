@@ -73,7 +73,7 @@ Status legend used throughout: **[built]** exists in phase 1 and is covered by t
                           ▼
            packet builder  (≤25 clusters, ~300 tokens each, UNTRUSTED env.) [built] packet.py
                           ▼
-           triager subagent  (Read/Grep/Glob only; JSON verdicts)    [planned: phase 2]
+           triager subagent  (Read/Grep/Glob only; JSON verdicts)    [built]
                           ▼
            report.md + review.sarif                             [built] report.py, sarif.py
 ```
@@ -82,8 +82,8 @@ Status legend used throughout: **[built]** exists in phase 1 and is covered by t
 
 | Tier | Trigger | Scope | Tools | Budget | Output |
 |---|---|---|---|---|---|
-| **1** | PostToolUse hook, matcher `Edit\|Write`, filtered to `*.py` / `*.java` **[planned: phase 2]**; backend `sift hook-check` **[built]** | the one edited file | single-file, no-build tools: Ruff, Bandit, gitleaks; PMD quickstart only if its one-file cold start is ≤ 4 s | hard timeout 15 s | exit 0 silently; exit 2 with ≤ 5 one-line findings **only** when a finding is (a) error/high severity and (b) new relative to the baseline |
-| **3** | `/sift:review` command **[planned: phase 2]**; backend `sift scan` + `sift report` **[built]** | `git diff <merge-base>` + uncommitted + untracked | all adapters, optional test command | per-tool timeout (300 s) | triage, then `report.md` + `review.sarif` |
+| **1** | PostToolUse hook, matcher `Edit\|Write`, filtered to `*.py` / `*.java` **[built]**; backend `sift hook-check` **[built]** | the one edited file | single-file, no-build tools: Ruff, Bandit, gitleaks, Semgrep, PMD quickstart (one-file cold start ≤ 4 s; measured in `hooks/README.md`) | hard timeout 15 s | exit 0 silently; exit 2 with ≤ 5 one-line findings **only** when a finding is (a) error/high severity and (b) new relative to the baseline |
+| **3** | `/sift:review` command **[built]**; backend `sift scan` + `sift report` **[built]** | `git diff <merge-base>` + uncommitted + untracked | all adapters, optional test command | per-tool timeout (300 s) | triage, then `report.md` + `review.sarif` |
 | **4** | CI gate **[roadmap]** | PR diff | deterministic only, no LLM | CI | SARIF upload |
 
 **Baseline (Tier 1).** `sift hook-check <file> [--baseline-ref HEAD]` runs every adapter with
@@ -91,22 +91,17 @@ Status legend used throughout: **[built]** exists in phase 1 and is covered by t
 file, rewrites the baseline findings' paths, re-fingerprints them, and prints
 `{file, baseline_ref, new_findings, tools}`. It returns **all** new findings with their severity;
 the phase-2 hook applies the error/high filter, the ≤ 5 limit, and the per-session cache keyed
-by (session_id, path, file hash) so identical messages are never repeated. The cache is not built yet.
+by (session_id, path, file hash) so identical messages are never repeated. The cache is in `hooks/post_edit.py` **[built]**.
 
-**PMD in Tier 1 — preliminary.** One cold run of PMD quickstart on one small file took
-**~2.0 s wall time** (PMD 7.29.0, JDK 27, Apple Silicon). This is a single preliminary
-measurement, not the phase-2 benchmark. `PmdAdapter.single_file_ok` is `True` pending that
-measurement; the final decision goes into the README.
+**PMD in Tier 1.** Median one-file cold start is 1.79 s (limit 4 s), so PMD stays in the hook. Semgrep
+also runs there, which takes a full Java `hook-check` to a 5.42 s median. Numbers are in `hooks/README.md`.
 
 **Why the LLM never runs inside a hook.** A hook fires on every edit, so an LLM call there
 would multiply cost and add seconds of latency to each keystroke-level action. It would also
 risk feedback loops: the agent reacting to the reviewer's output, which triggers further
 edits and hooks. Hooks stay deterministic and cheap; triage happens once, on demand.
 
-**Claude Code platform facts (UNVERIFIED — to be checked against the current hooks and plugin
-reference before phase 2):** PostToolUse hooks receive JSON on stdin including `tool_name`,
-`tool_input.file_path` and `session_id`; exit code 2 feeds stderr back to the model; `matcher`
-is a regex over tool names; local plugins load for development via a plugin directory flag.
+**Claude Code platform facts:** verified against the docs and in live sessions; see `hooks/README.md`.
 
 ## 4. Finding schema, severity and rule families
 
@@ -253,7 +248,7 @@ UNTRUSTED CODE <delim>>>>
 
 ## 7. Triager subagent contract
 
-**[planned: phase 2]** `agents/triager.md`. The verdict model (`TriageResult`) and its
+**[built]** `agents/triager.md`. The verdict model (`TriageResult`) and its
 enforcement in the report are **[built]**.
 
 - **Tools:** `Read`, `Grep`, `Glob` only. No Bash, Edit or Write.
@@ -304,10 +299,10 @@ enforcement in the report are **[built]**.
 
 | Command | Behaviour | stdout |
 |---|---|---|
-| `sift scan [--base main] [--paths …] [--format packet\|sarif\|md\|json] [--all]` | diff-scoped by default; `--all` scans every git-visible file (or walks the directory outside git) and keeps out-of-diff findings with `in_diff=false` | the chosen format (`json` = `ScanResult`) |
+| `sift scan [--base main] [--paths …] [--format packet\|sarif\|md\|json] [--all] [--output <file>]` | diff-scoped by default; `--all` scans every git-visible file (or walks the directory outside git) and keeps out-of-diff findings with `in_diff=false` | the chosen format (`json` = `ScanResult`) |
 | `sift hook-check <file> [--baseline-ref HEAD]` | Tier 1 backend (§3) | `{file, baseline_ref, new_findings, tools}` |
 | `sift tools` | detected tools, versions, binary paths | one line per adapter |
-| `sift report --triage <t.json> --findings <scan.json> [--out .sift/out]` | writes `report.md` + `review.sarif` | `{report, sarif}` paths |
+| `sift report --triage <t.json> --findings <scan.json> [--out .sift/out] [--md-name report.md] [--test-status passed\|failed\|skipped] [--test-note <text>] [--test-output <log>]` | writes the Markdown report (default `report.md`) + `review.sarif` | `{report, sarif}` paths |
 
 Exit codes: 0 ok; 1 for git or IO errors, invalid triage or invalid SARIF; 2 for usage errors.
 Diff edge cases: an unknown base falls back to `HEAD` with a warning; a repo with no commits
@@ -329,7 +324,7 @@ rules/            -> installed as package data `sift.rules`               [built
   tool-config/{gitleaks.toml,bandit.ini}
 tests/  (+ tests/fixtures/<tool>.json real tool output)                   [built]
 .claude-plugin/plugin.json  hooks/hooks.json  hooks/post_edit.py
-commands/review.md  agents/triager.md                                     [planned: phase 2]
+commands/review.md  agents/triager.md                                     [built]
 .mcp.json                                                                 [planned: phase 3]
 bench/{ground_truth.yaml,bench.py,results.md}                             [planned: phase 4]
 examples/flight-offers/ (Spring Boot demo)  examples/pyservice/           [planned: phase 4]
@@ -355,7 +350,7 @@ sift at a working copy of the rules for rule development.
 |---|---|---|---|
 | base branch | `base` | — | `main` |
 | severity threshold (hook + report) | `severity_threshold` | `severity_threshold` | `high` for the hook |
-| test command (Tier 3) | `test_command` | `test_command` | none |
+| test command (Tier 3) | `test_command` | `test_command` | empty: skip tests, reported as `Tests: skipped (no test_command configured)` |
 | excluded paths | `exclude` | — | `.sift/` |
 
 `.sift.toml` is repo-controlled, so it may only *narrow or tune* the review. It can never point
@@ -402,7 +397,7 @@ UNTRUSTED CODE envelope, and the preamble tells the triager it is data. Instruct
 comments are grounds for `needs_human`. Uncited dismissals are rejected in code, not just by
 prompt.
 
-**Read-only triager [planned: phase 2].** It has Read, Grep and Glob only, so a successful
+**Read-only triager [built].** It has Read, Grep and Glob only, so a successful
 injection can at worst produce a wrong verdict. That verdict must still cite evidence, and
 every dismissal is visible in the report.
 
@@ -418,6 +413,7 @@ every dismissal is visible in the report.
 | A pure deletion marks the lines on either side as changed | removing a guard makes neighbouring code worth reviewing |
 | Dismissed findings stay in SARIF as suppressed results | the audit trail survives into code-scanning tools |
 | `hook-check` returns new findings of every severity | the severity filter belongs to the hook and its config |
+| Semgrep runs in the Tier 1 hook | it is the only hook tool with Java security rules, and it fits the 15 s budget |
 | `java.jdbc-string-concat` also flags a parameter passed directly as the SQL | it is also an injection; taint mode is simpler and stricter |
 | Python ≥ 3.12 instead of 3.15 | wider adoption; nothing needs newer syntax (suite passes on 3.12.13 and 3.15.2) |
 | Extra modules `normalize.py` and `pipeline.py` | keeps every module under ~200 lines |
@@ -442,9 +438,15 @@ every dismissal is visible in the report.
   - p50 latency per tier: hook-check per file, and review per diff;
   - tokens per review: packet characters ÷ 4, plus the triager's reported usage.
 
+**Sample output:** `docs/examples/review-sample.md` is a real `/sift:review` report, produced on the seeded
+files `docs/examples/Bad.java` and `docs/examples/bad.py`.
+
 ## 15. Roadmap
 
 - SpotBugs + FindSecBugs behind a build command
+- **`hook_mode: fast|full`**: `fast` runs only the near-instant Python tools and skips the JVM and Semgrep
+  startup. Reason: measured `hook-check` p50 per edit is 5.42 s on Java with Semgrep, 3.76 s without it, and
+  4.34 s on Python with Semgrep against 0.55 s without it (`hooks/README.md`, Cost per edit)
 - detekt (Kotlin), Checkstyle, Error Prone
 - Stop hook (opt-in, async)
 - `/sift:fix`

@@ -1,0 +1,28 @@
+{
+  "name": "sift",
+  "version": "0.1.0",
+  "description": "Static-analysis findings on changed code, triaged by a read-only subagent with auditable dismissals.",
+  "author": { "name": "patryk.domalik" },
+  "license": "MIT",
+  "userConfig": {
+    "test_command": {
+      "type": "string",
+      "title": "Test command",
+      "description": "Command /sift:review runs after the scan. Leave empty to skip tests.",
+      "default": ""
+    },
+    "severity_threshold": {
+      "type": "string",
+      "title": "Severity threshold",
+      "description": "Lowest severity the edit hook reports.",
+      "options": ["critical", "high", "medium", "low", "info"],
+      "default": "high"
+    },
+    "hook_enabled": {
+      "type": "boolean",
+      "title": "Enable edit hook",
+      "description": "Check each edited .py and .java file for new findings.",
+      "default": true
+    }
+  }
+}

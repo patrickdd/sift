@@ -24,6 +24,7 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--paths", nargs="+", help="restrict to these files/directories")
     s.add_argument("--format", choices=["packet", "sarif", "md", "json"], default="packet")
     s.add_argument("--all", action="store_true", help="ignore the diff and scan every file")
+    s.add_argument("--output", type=Path, help="write to this file instead of stdout")
 
     h = sub.add_parser("hook-check", help="new findings in one file vs. a baseline ref")
     h.add_argument("file")
@@ -35,6 +36,10 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("--triage", required=True, type=Path, help="triager JSON array")
     r.add_argument("--findings", required=True, type=Path, help="output of `sift scan --format json`")
     r.add_argument("--out", type=Path, default=Path(".sift/out"))
+    r.add_argument("--md-name", default="report.md", help="file name of the Markdown report")
+    r.add_argument("--test-status", choices=["passed", "failed", "skipped"], help="test command result")
+    r.add_argument("--test-note", help="reason shown beside a skipped status")
+    r.add_argument("--test-output", type=Path, help="test log; its tail is shown on failure")
     return p
 
 
@@ -46,14 +51,19 @@ def cmd_scan(args: argparse.Namespace) -> int:
     root = pipeline.find_root()
     result, clusters = pipeline.scan(root, base=args.base, paths=args.paths, all_mode=args.all)
     if args.format == "json":
-        _emit(result.model_dump_json(indent=2))
+        text = result.model_dump_json(indent=2)
     elif args.format == "packet":
-        _emit(build_packet(clusters, root))
+        text = build_packet(clusters, root)
     elif args.format == "sarif":
-        _emit(json.dumps(to_sarif(clusters), indent=2))
+        text = json.dumps(to_sarif(clusters), indent=2)
     else:
         meta = {"mode": result.mode, "base": result.base, "elapsed": f"{result.seconds:.1f}s"}
-        _emit(render_report(clusters, None, result.tools, meta=meta))
+        text = render_report(clusters, None, result.tools, meta=meta)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(text.rstrip("\n") + "\n", encoding="utf-8")
+    else:
+        _emit(text)
     return 0
 
 
@@ -77,14 +87,26 @@ def _load_findings(path: Path) -> ScanResult:
     return ScanResult.model_validate(data)
 
 
+def _test_result(args: argparse.Namespace) -> dict | None:
+    if not args.test_status:
+        return None
+    tail = ""
+    if args.test_status == "failed" and args.test_output and args.test_output.is_file():
+        tail = "\n".join(args.test_output.read_text(encoding="utf-8", errors="replace").splitlines()[-30:])
+    note = args.test_note or ("no test_command configured" if args.test_status == "skipped" else None)
+    return {"status": args.test_status, "tail": tail, "note": note}
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     scan = _load_findings(args.findings)
     clusters = cluster(dedupe(scan.findings))
     triage = load_triage(args.triage)
     args.out.mkdir(parents=True, exist_ok=True)
     meta = {"mode": scan.mode, "base": scan.base, "scanned": scan.generated_at}
-    report_path = args.out / "report.md"
-    report_path.write_text(render_report(clusters, triage, scan.tools, meta=meta), encoding="utf-8")
+    report_path = args.out / args.md_name
+    tests = _test_result(args)
+    text = render_report(clusters, triage, scan.tools, meta=meta, tests=tests)
+    report_path.write_text(text, encoding="utf-8")
     log = to_sarif(clusters, triage)
     problems = validate(log)
     for problem in problems:

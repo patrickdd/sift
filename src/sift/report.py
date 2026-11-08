@@ -79,6 +79,7 @@ def render_report(
     tools: list[ToolRun] | None = None,
     *,
     meta: dict | None = None,
+    tests: dict | None = None,
 ) -> str:
     verdicts = resolve(clusters, triage)
     tp = [c for c in clusters if c.id in verdicts and verdicts[c.id].verdict == "true_positive"]
@@ -97,6 +98,13 @@ def render_report(
             "|---:|---:|---:|---:|---:|---:|",
             f"| {len(clusters)} | {sum(len(c.members) for c in clusters)} | {len(tp)} | "
             f"{len(fp)} | {len(nh)} | {len(un)} |", ""]
+
+    if tests:
+        note = f" ({tests['note']})" if tests.get("note") else ""
+        out += [f"## Tests: {tests['status']}{note}", ""]
+        if tests.get("tail"):
+            fence = "`" * max(3, 1 + max((len(m) for m in re.findall(r"`+", tests["tail"])), default=0))
+            out += ["Last 30 lines:", "", fence, tests["tail"], fence, ""]
 
     if tp:
         out += ["## True positives", ""] + _by_severity(tp, verdicts, 3)

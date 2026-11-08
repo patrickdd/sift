@@ -1,0 +1,30 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "detekt", "version": "0.0.0-handwritten", "rules": [] } },
+      "results": [
+        {
+          "ruleId": "detekt.potential-bugs.UnsafeCast",
+          "level": "error",
+          "message": { "text": "This cast can never succeed." },
+          "locations": [
+            { "physicalLocation": {
+                "artifactLocation": { "uri": "src/App.kt" },
+                "region": { "startLine": 2, "endLine": 2 } } }
+          ]
+        },
+        {
+          "ruleId": "detekt.style.MagicNumber",
+          "level": "error",
+          "message": { "text": "This expression contains a magic number." },
+          "locations": [
+            { "physicalLocation": {
+                "artifactLocation": { "uri": "src/App.kt" },
+                "region": { "startLine": 3 } } }
+          ]
+        }
+      ]
+    }
+  ]
+}

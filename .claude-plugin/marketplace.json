@@ -1,0 +1,11 @@
+{
+  "name": "sift",
+  "owner": { "name": "patryk.domalik" },
+  "plugins": [
+    {
+      "name": "sift",
+      "source": "./",
+      "description": "Static-analysis findings on changed code, triaged by a read-only subagent with auditable dismissals."
+    }
+  ]
+}

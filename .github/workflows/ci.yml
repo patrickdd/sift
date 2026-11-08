@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  PMD_VERSION: 7.29.0
+  GITLEAKS_VERSION: 8.30.1
+  SEMGREP_VERSION: 1.184.0
+  RUFF_VERSION: 0.17.4
+  BANDIT_VERSION: 1.9.4
+  CLAUDE_CODE_VERSION: 2.1.319
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main and bug/* refs
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/bug/*:refs/remotes/origin/bug/*'
+          git show-ref --verify --quiet refs/heads/main || git branch main origin/main
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: examples/flight-offers/pom.xml
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sift
+        run: python -m pip install -e ".[dev]" "ruff==$RUFF_VERSION" uv
+
+      # Semgrep and Bandit get their own environments: Semgrep's dependencies conflict with sift's.
+      - name: Install Semgrep and Bandit
+        run: |
+          pipx install "semgrep==$SEMGREP_VERSION"
+          pipx install "bandit==$BANDIT_VERSION"
+
+      - name: Install PMD
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/pmd.zip" "https://github.com/pmd/pmd/releases/download/pmd_releases%2F$PMD_VERSION/pmd-dist-$PMD_VERSION-bin.zip"
+          unzip -q "$RUNNER_TEMP/pmd.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/pmd-bin-$PMD_VERSION/bin" >> "$GITHUB_PATH"
+
+      - name: Install gitleaks
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C "$RUNNER_TEMP/gitleaks"
+          echo "$RUNNER_TEMP/gitleaks" >> "$GITHUB_PATH"
+
+      - name: Show tool versions
+        run: python -m sift.cli tools
+
+      - name: Unit tests
+        run: pytest -q
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Semgrep rule tests
+        run: semgrep --test rules/
+
+      - name: Validate the Claude Code plugin
+        run: |
+          npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          claude plugin validate .
+
+      # --output keeps the committed results.md intact, as the floor to compare against.
+      - name: Deterministic benchmark (no LLM, no API key)
+        run: python bench/bench.py --skip-triage --output "$RUNNER_TEMP/stage-a.md" --assert-recall-from bench/results.md

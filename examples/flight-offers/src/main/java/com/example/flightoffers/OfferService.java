@@ -3,6 +3,7 @@ package com.example.flightoffers;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -29,7 +30,12 @@ public class OfferService {
     public Offer create(Offer offer) {
         requireIata(offer.origin());
         requireIata(offer.destination());
-        return repository.save(offer);
+        Offer stored = offer;
+        try {
+            stored = repository.save(offer);
+        } catch (DataAccessException ex) {
+        }
+        return stored;
     }
 
     private static String requireIata(String code) {

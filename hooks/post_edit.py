@@ -4,7 +4,12 @@
 Exit 0 silently unless the edited file has new findings at or above the severity threshold;
 then print at most 5 `path:line [tool/rule] message` lines to stderr and exit 2. Any internal
 failure exits 0 and is written to hook.log in the cache dir: sift must never block editing.
+
+Must import on an old system python (macOS ships 3.9), hence the __future__ import and the
+lazy tomllib.
 """
+
+from __future__ import annotations
 
 import hashlib
 import json
@@ -15,7 +20,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 from pathlib import Path
 
 TIMEOUT_SECONDS = 15
@@ -54,6 +58,8 @@ def resolve_path(payload: dict) -> Path | None:
 
 
 def repo_threshold(start: Path) -> str | None:
+    import tomllib  # 3.11+
+
     for folder in (start, *start.parents):
         candidate = folder / ".sift.toml"
         if candidate.is_file():
@@ -64,16 +70,16 @@ def repo_threshold(start: Path) -> str | None:
 
 
 def threshold_rank(start: Path) -> int:
-    """Precedence per DESIGN section 11: .sift.toml > plugin userConfig > default."""
+    """DESIGN section 11: .sift.toml may report more than the user's setting, never less."""
     try:
         repo_value = repo_threshold(start)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, ImportError) as exc:
         log(f"ignoring unreadable .sift.toml: {exc}")
         repo_value = None
-    for value in (repo_value, os.environ.get("CLAUDE_PLUGIN_OPTION_SEVERITY_THRESHOLD")):
-        if value in RANK:
-            return RANK[value]
-    return RANK["high"]
+    user_rank = RANK.get(os.environ.get("CLAUDE_PLUGIN_OPTION_SEVERITY_THRESHOLD", ""), RANK["high"])
+    if isinstance(repo_value, str) and repo_value in RANK:
+        return min(RANK[repo_value], user_rank)
+    return user_rank
 
 
 def run_sift(path: Path, budget: float) -> dict:

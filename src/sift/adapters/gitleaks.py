@@ -4,7 +4,8 @@ gitleaks 8.x replaced `detect --no-git` with `gitleaks dir`. sift always passes:
   --config <sift's own config>  (a repo .gitleaks.toml can allowlist everything; verified)
   --gitleaks-ignore-path <sift rules/tool-config>  (repo .gitleaksignore is not loaded)
   --ignore-gitleaks-allow  (in-repo "gitleaks:allow" comments cannot silence findings)
-  --redact  (raw secrets never reach stdout, the packet, or the LLM)
+  --redact  (covers gitleaks' own output only; sift masks the source lines it reads itself,
+            see normalize.redact_line)
 `gitleaks dir` takes one source, so each target gets its own (parallel) invocation.
 
 Severity: every leak -> high; category: secret.
@@ -14,7 +15,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from sift.adapters.base import ToolAdapter
+from sift.adapters.base import ToolAdapter, safe_target
 from sift.finding import Finding
 from sift.normalize import make_finding, rules_dir
 
@@ -50,7 +51,7 @@ class GitleaksAdapter(ToolAdapter):
         if not binary or len(paths) <= 1:
             return super().run(paths, repo_root)
         version = self.version()
-        cmds = self.commands(binary, [p for p in paths if self.handles(p)], repo_root)
+        cmds = self.commands(binary, [safe_target(p) for p in paths if self.handles(p)], repo_root)
         with ThreadPoolExecutor(max_workers=8) as pool:
             chunks = pool.map(lambda c: self._run_one(c, repo_root, version), cmds)
         return [f for chunk in chunks for f in chunk]

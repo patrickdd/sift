@@ -12,9 +12,14 @@ from pathlib import Path
 from sift.adapters.base import warn
 from sift.dedupe import Cluster
 from sift.finding import SEVERITIES, ToolRun, TriageResult
+from sift.normalize import read_lines
 
-CITATION = re.compile(r"[\w./\\-]+\.\w+:\d+")
+CITATION = re.compile(r"([\w./\\-]+\.\w+):(\d+)")
 NO_CITATION = "dismissal rejected by sift: rationale cites no path:line evidence"
+BAD_CITATION = "dismissal rejected by sift: no cited path:line exists in the repository"
+SELF_CITATION = "dismissal rejected by sift: a high/critical dismissal must cite code outside the flagged lines"
+SECRET_NOTE = "secret finding: withheld from the triager; a human must confirm and rotate it"
+_DISMISSIVENESS = {"false_positive": 0, "true_positive": 1, "needs_human": 2}
 
 
 def load_triage(path: Path) -> list[TriageResult]:
@@ -23,17 +28,47 @@ def load_triage(path: Path) -> list[TriageResult]:
     return [TriageResult.model_validate(item) for item in items]
 
 
-def resolve(clusters: list[Cluster], triage: list[TriageResult] | None) -> dict[str, TriageResult]:
-    """Effective verdict per cluster id, after enforcement. Missing ids are untriaged."""
-    known = {c.id for c in clusters}
+def _dismissal_problem(c: Cluster, rationale: str, root: Path | None) -> str | None:
+    cited = [(p, int(n)) for p, n in CITATION.findall(rationale)]
+    if not cited:
+        return NO_CITATION
+    if root is None:  # no repository at hand (unit use): only the shape can be checked
+        return None
+    base = root.resolve()
+    real = [
+        (p, n) for p, n in cited
+        if (base / p).resolve().is_relative_to(base) and 1 <= n <= len(read_lines(base / p))
+    ]
+    if not real:
+        return BAD_CITATION
+    if c.severity in ("critical", "high") and all(
+        p.removeprefix("./") == c.path and c.start_line <= n <= c.end_line for p, n in real
+    ):
+        return SELF_CITATION
+    return None
+
+
+def resolve(
+    clusters: list[Cluster], triage: list[TriageResult] | None, root: Path | None = None
+) -> dict[str, TriageResult]:
+    """Effective verdict per cluster id, after enforcement. Missing ids are untriaged.
+
+    With two verdicts for one id the least dismissive wins, so an echoed payload cannot
+    overwrite a real verdict. Secret clusters are always needs_human.
+    """
+    known = {c.id: c for c in clusters}
     out: dict[str, TriageResult] = {}
     for t in triage or []:
         if t.id not in known:
             warn(f"triage verdict for unknown cluster id {t.id!r} ignored")
             continue
-        if t.verdict == "false_positive" and not CITATION.search(t.rationale):
-            t = t.model_copy(update={"verdict": "needs_human", "rationale": f"{t.rationale} ({NO_CITATION})"})
-        out[t.id] = t
+        if t.verdict == "false_positive" and (problem := _dismissal_problem(known[t.id], t.rationale, root)):
+            t = t.model_copy(update={"verdict": "needs_human", "rationale": f"{t.rationale} ({problem})"})
+        if t.id not in out or _DISMISSIVENESS[t.verdict] > _DISMISSIVENESS[out[t.id].verdict]:
+            out[t.id] = t
+    for c in clusters:
+        if c.is_secret:
+            out[c.id] = TriageResult(id=c.id, verdict="needs_human", confidence=0, rationale=SECRET_NOTE)
     return out
 
 
@@ -80,8 +115,10 @@ def render_report(
     *,
     meta: dict | None = None,
     tests: dict | None = None,
+    notes: list[str] | None = None,
+    root: Path | None = None,
 ) -> str:
-    verdicts = resolve(clusters, triage)
+    verdicts = resolve(clusters, triage, root)
     tp = [c for c in clusters if c.id in verdicts and verdicts[c.id].verdict == "true_positive"]
     fp = [c for c in clusters if c.id in verdicts and verdicts[c.id].verdict == "false_positive"]
     nh = [c for c in clusters if c.id in verdicts and verdicts[c.id].verdict == "needs_human"]
@@ -94,6 +131,13 @@ def render_report(
     tool_secs = sum(t.seconds for t in tools)
     facts.append(f"tool time: {tool_secs:.1f}s")
     out += [" · ".join(facts), ""]
+    incomplete = [t.name for t in tools if t.ran and (not t.available or t.warnings)]
+    if incomplete:
+        out += [f"> **Incomplete coverage:** {', '.join(incomplete)} did not complete. "
+                "A missing finding here is not evidence of safety.", ""]
+    out += [f"> **Scope:** {note}" for note in notes or []]
+    if notes:
+        out.append("")
     out += ["| Clusters | Findings | True positive | Dismissed | Needs human | Untriaged |",
             "|---:|---:|---:|---:|---:|---:|",
             f"| {len(clusters)} | {sum(len(c.members) for c in clusters)} | {len(tp)} | "
@@ -114,7 +158,7 @@ def render_report(
         title = "Findings (untriaged)" if triage is None else f"Untriaged ({len(un)})"
         out += [f"## {title}", ""] + _by_severity(un, verdicts, 3)
     if not clusters:
-        out += ["No findings.", ""]
+        out += ["No findings from the tools that completed." if incomplete else "No findings.", ""]
     out += ["<details>", f"<summary>Dismissed ({len(fp)})</summary>", ""]
     for c in fp:
         out += _item(c, verdicts[c.id])

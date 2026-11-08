@@ -47,15 +47,19 @@ def run_tool(
             env=scrubbed_env(),
             stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=timeout,
             check=False,
         )
     except subprocess.TimeoutExpired:
         return "", f"timed out after {timeout:.0f}s", -1, time.monotonic() - start
-    return proc.stdout, proc.stderr, proc.returncode, time.monotonic() - start
+    # Decoded by hand: text mode would turn a lone CR inside repo content into a line break.
+    out, err = (b.decode("utf-8", "replace") for b in (proc.stdout, proc.stderr))
+    return out, err, proc.returncode, time.monotonic() - start
+
+
+def safe_target(path: str) -> str:
+    """A relative target as `./path`, so a file named `--exclude=*.py` cannot become an option."""
+    return path if Path(path).is_absolute() or path.startswith("./") else f"./{path}"
 
 
 @runtime_checkable
@@ -128,7 +132,7 @@ class ToolAdapter:
         warn(text)
 
     def run(self, paths: list[str], repo_root: Path) -> list[Finding]:
-        targets = [p for p in paths if self.handles(p)]
+        targets = [safe_target(p) for p in paths if self.handles(p)]
         if not targets:
             return []
         binary = self.binary()
@@ -147,6 +151,9 @@ class ToolAdapter:
         except FileNotFoundError:
             self.warn("binary disappeared; skipped")
             return []
+        except OSError as exc:  # e.g. E2BIG: one tool must not take the whole scan down
+            self.warn(f"could not start ({exc})")
+            return []
         self.seconds += secs
         if code not in self.ok_returncodes:
             self.warn(f"exit code {code}: {err.strip()[:300]}")
@@ -154,6 +161,6 @@ class ToolAdapter:
                 return []
         try:
             return self.parse(out, repo_root, version)
-        except (ValueError, KeyError, TypeError, IndexError) as exc:
+        except (ValueError, KeyError, TypeError, IndexError, AttributeError) as exc:
             self.warn(f"could not parse output ({exc.__class__.__name__}: {exc})")
             return []

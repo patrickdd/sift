@@ -6,8 +6,10 @@ numbers (the coordinates the tools report). Untracked, non-ignored files count a
 entirely changed. A pure deletion marks the lines on either side of it as changed,
 because removing a guard can make the neighbouring code vulnerable.
 
-Hardening: git runs with the scrubbed env, fsmonitor disabled, and no external diff
-drivers or textconv filters, so repository config cannot execute programs.
+Hardening: git runs with the scrubbed env, fsmonitor disabled, no external diff drivers or
+textconv, and every configured clean/smudge/process filter blanked for the diff, so
+repository config cannot execute programs. `--text` stops `.gitattributes` from hiding a
+file as binary. The parser counts hunk lines, so added content cannot pose as a header.
 """
 
 import re
@@ -16,7 +18,7 @@ from pathlib import Path
 from sift.adapters.base import run_tool, warn
 
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+_HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _GIT = ["git", "-c", "core.fsmonitor=false", "-c", "core.quotePath=false"]
 
 
@@ -60,14 +62,27 @@ def parse_unified0(text: str) -> dict[str, set[int]]:
     """Parse `git diff --unified=0` output into {new_path: changed new-side line numbers}."""
     changed: dict[str, set[int]] = {}
     current: str | None = None
-    for line in text.splitlines():
+    old_left = new_left = 0  # lines still owed by the open hunk; they are content, never headers
+    for line in text.split("\n"):  # not splitlines(): U+2028 and friends are ordinary content
+        if old_left > 0 or new_left > 0:
+            if line.startswith("-"):
+                old_left -= 1
+            elif line.startswith("+"):
+                new_left -= 1
+            elif not line.startswith("\\"):  # "\ No newline at end of file" counts for neither
+                old_left, new_left = old_left - 1, new_left - 1
+            continue
         if line.startswith("+++ "):
             target = _unquote(line[4:].rstrip("\t"))
             current = None if target == "/dev/null" else target.removeprefix("b/")
             if current is not None:
                 changed.setdefault(current, set())
-        elif current is not None and (m := _HUNK.match(line)):
-            start, count = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
+        elif m := _HUNK.match(line):
+            old_left = int(m.group(1)) if m.group(1) is not None else 1
+            start, count = int(m.group(2)), int(m.group(3)) if m.group(3) is not None else 1
+            new_left = count
+            if current is None:  # a deleted file: consume its hunk, record nothing
+                continue
             if count == 0:  # pure deletion after line `start`
                 changed[current].update(n for n in (start, start + 1) if n >= 1)
             else:
@@ -91,12 +106,27 @@ def _line_count(path: Path) -> int:
     return data.count(b"\n") + (0 if data.endswith(b"\n") or not data else 1)
 
 
+def _blank_filters(root: Path) -> list[str]:
+    """`-c` overrides emptying every configured filter command (git skips an empty one)."""
+    out, _, code, _ = run_tool(
+        [*_GIT, "config", "-z", "--name-only", "--get-regexp", r"^filter\..*\.(clean|smudge|process)$"],
+        60,
+        root,
+    )
+    keys = [k for k in out.split("\0") if k] if code == 0 else []
+    return [arg for key in keys for arg in ("-c", f"{key}=")]
+
+
+def base_exists(base: str, root: Path) -> bool:
+    return run_tool([*_GIT, "merge-base", base, "HEAD"], 60, root)[2] == 0
+
+
 def changed_lines(base: str = "main", cwd: Path | str = ".") -> dict[str, set[int]]:
     """Map repo-relative path -> set of changed line numbers (working-tree coordinates)."""
     root = repo_root(cwd)
     base_rev = resolve_base(base, root)
     text = git(
-        ["diff", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv",
+        [*_blank_filters(root), "diff", "--text", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv",
          "--src-prefix=a/", "--dst-prefix=b/", base_rev],
         root,
     )

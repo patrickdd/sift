@@ -1,7 +1,8 @@
 """Two-stage dedupe.
 
 1. Fingerprint dedupe: findings with the same fingerprint (same rule family, path and
-   normalized code line) merge into one Finding; `tools_agreeing` is the union.
+   normalized code line) on the same line merge into one Finding; `tools_agreeing` is the
+   union. The same code repeated on another line is another occurrence with its own id.
 2. Clustering: findings in the same file and rule family whose line ranges overlap
    form one cluster. Every member gets the cluster id and the cluster's tools_agreeing.
 """
@@ -48,29 +49,39 @@ class Cluster:
     def cwe(self) -> str | None:
         return next((f.cwe for f in self.members if f.cwe), None)
 
+    @property
+    def is_secret(self) -> bool:
+        return any(f.category == "secret" for f in self.members)
+
     def priority(self) -> int:
         """Packet ordering: severity rank x number of agreeing tools."""
         return SEVERITY_RANK[self.severity] * len(self.tools)
 
 
 def dedupe(findings: list[Finding]) -> list[Finding]:
-    merged: dict[str, Finding] = {}
+    merged: dict[tuple[str, int], Finding] = {}
     for f in findings:
-        existing = merged.get(f.id)
+        key = (f.id, f.start_line)
+        existing = merged.get(key)
         if existing is None:
-            merged[f.id] = f.model_copy(update={"tools_agreeing": sorted(set(f.tools_agreeing or [f.tool]))})
+            merged[key] = f.model_copy(update={"tools_agreeing": sorted(set(f.tools_agreeing or [f.tool]))})
             continue
         tools = sorted(set(existing.tools_agreeing) | set(f.tools_agreeing or [f.tool]))
         keep = f if SEVERITY_RANK[f.severity] > SEVERITY_RANK[existing.severity] else existing
-        merged[f.id] = keep.model_copy(
+        merged[key] = keep.model_copy(
             update={
                 "tools_agreeing": tools,
-                "start_line": min(existing.start_line, f.start_line),
                 "end_line": max(existing.end_line, f.end_line),
                 "in_diff": existing.in_diff or f.in_diff,
                 "cwe": keep.cwe or existing.cwe or f.cwe,
             }
         )
+    occurrences: dict[str, int] = {}
+    for f in sorted(merged.values(), key=lambda x: x.start_line):
+        n = occurrences.get(f.id, 0)
+        occurrences[f.id] = n + 1
+        if n:  # a later identical line: distinct and order-stable, so a baseline can count them
+            f.id = hashlib.sha256(f"{f.id}\x1f{n}".encode()).hexdigest()
     return list(merged.values())
 
 

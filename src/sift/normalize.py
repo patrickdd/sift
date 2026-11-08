@@ -1,6 +1,9 @@
 """Turn raw tool results into Findings: family lookup, relpaths, snippets, fingerprints."""
 
+import hashlib
 import os
+import re
+from collections.abc import Iterable, Mapping
 from functools import cache
 from importlib.resources import files
 from pathlib import Path
@@ -8,9 +11,10 @@ from urllib.parse import unquote, urlparse
 
 import yaml
 
-from sift.finding import Finding
+from sift.finding import Finding, normalize_code_line
 
 SNIPPET_MAX_LINES = 5
+_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 
 
 def rules_dir() -> Path:
@@ -49,9 +53,13 @@ def family_for(tool: str, rule_id: str) -> dict:
 @cache
 def _read_lines(abs_path: str, mtime_ns: int) -> tuple[str, ...]:
     try:
-        return tuple(Path(abs_path).read_text(encoding="utf-8", errors="replace").splitlines())
+        data = Path(abs_path).read_bytes().decode("utf-8", "replace")
     except OSError:
         return ()
+    # Split on \n only, as the tools count lines: a form feed or U+2028 must not shift numbers,
+    # or redaction would mask the wrong line.
+    lines = [line.removesuffix("\r") for line in data.split("\n")]
+    return tuple(lines[:-1] if lines and lines[-1] == "" else lines)
 
 
 def read_lines(path: Path) -> tuple[str, ...]:
@@ -76,6 +84,36 @@ def to_rel(abs_path: Path, repo_root: Path) -> str:
         return abs_path.as_posix()  # outside the repo (e.g. a hook baseline temp file)
 
 
+def redact_line(line: str, path: str) -> str:
+    """Stand-in for a secret-bearing line. The digest keeps fingerprints distinct and stable."""
+    key = normalize_code_line(line, path) or line.strip()
+    return f"[secret redacted by sift: {hashlib.sha256(key.encode()).hexdigest()[:12]}]"
+
+
+def mask_lines(lines: Iterable[str], first: int, hidden: Iterable[int], path: str) -> list[str]:
+    """Replace the lines whose 1-based number (counting from `first`) is in `hidden`."""
+    secret = set(hidden)
+    return [redact_line(t, path) if n in secret else t for n, t in enumerate(lines, start=first)]
+
+
+def secret_line_map(findings: Iterable[Finding]) -> dict[str, list[int]]:
+    """Every line any tool flagged as a secret, by path."""
+    out: dict[str, set[int]] = {}
+    for f in findings:
+        if f.category == "secret":
+            out.setdefault(f.path, set()).update(range(f.start_line, f.end_line + 1))
+    return {path: sorted(lines) for path, lines in out.items()}
+
+
+def mask_snippets(findings: Iterable[Finding], secrets: Mapping[str, list[int]]) -> None:
+    """Mask secret lines inside the snippets of findings from other rules."""
+    for f in findings:
+        hidden = set(secrets.get(f.path, ()))
+        if hidden & set(range(f.start_line, f.end_line + 1)) and f.category != "secret":
+            f.snippet = "\n".join(mask_lines(f.snippet.split("\n"), f.start_line, hidden, f.path))
+            f.refingerprint()
+
+
 def make_finding(
     *,
     tool: str,
@@ -94,14 +132,20 @@ def make_finding(
     start = max(1, int(start_line or 1))
     end = max(start, int(end_line or start))
     lines = read_lines(abs_path)
-    snippet = "\n".join(lines[start - 1 : min(end, start + SNIPPET_MAX_LINES - 1)])
+    shown = lines[start - 1 : min(end, start + SNIPPET_MAX_LINES - 1)]
     fam = family_for(tool, rule_id)
+    final_category = fam["category"] or category
+    if final_category == "secret":
+        # Bandit B105 quotes the value in its message, and the snippet is the source line itself.
+        shown = [redact_line(line, raw_path) for line in shown]
+        message = _QUOTED.sub("[redacted]", message)
+    snippet = "\n".join(shown)
     return Finding(
         tool=tool,
         tool_version=tool_version,
         rule_id=rule_id,
         rule_family=fam["family"],
-        category=fam["category"] or category,
+        category=final_category,
         cwe=fam["cwe"] or cwe,
         severity=severity,
         path=to_rel(abs_path, repo_root),

@@ -51,7 +51,7 @@ class Finding(BaseModel):
 
     def code_line(self) -> str:
         # Unreadable source: fall back to the line number so distinct findings never collide.
-        return self.snippet.splitlines()[0] if self.snippet else f"@L{self.start_line}"
+        return self.snippet.split("\n")[0] if self.snippet else f"@L{self.start_line}"
 
     def refingerprint(self) -> "Finding":
         self.id = fingerprint(self.rule_family, self.path, self.code_line())
@@ -65,6 +65,7 @@ class ToolRun(BaseModel):
     findings: int = 0
     seconds: float = 0.0
     warnings: list[str] = Field(default_factory=list)
+    ran: bool = True  # False when no target matched this tool's languages
 
 
 class ScanResult(BaseModel):
@@ -74,6 +75,8 @@ class ScanResult(BaseModel):
     seconds: float = 0.0
     tools: list[ToolRun] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)  # scope problems the report must show
+    secret_lines: dict[str, list[int]] = Field(default_factory=dict)  # path -> lines never to show
 
 
 class TriageResult(BaseModel):
@@ -117,6 +120,7 @@ def normalize_code_line(line: str, path: str = "") -> str:
 
 
 def fingerprint(rule_family: str, relpath: str, code_line: str) -> str:
-    normalized = normalize_code_line(code_line, relpath)
+    # A comment-only line normalizes to "": keep its text so different lines do not collide.
+    normalized = normalize_code_line(code_line, relpath) or code_line.strip()
     payload = "\x1f".join((rule_family, relpath, normalized))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

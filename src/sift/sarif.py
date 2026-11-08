@@ -5,6 +5,8 @@ triager's rationale as justification) so the dismissal remains auditable.
 `partialFingerprints["sift/v1"]` is the representative finding's fingerprint.
 """
 
+from pathlib import Path
+
 from sift import __version__
 from sift.dedupe import Cluster
 from sift.finding import TriageResult
@@ -24,8 +26,10 @@ def _location(path: str, start: int, end: int) -> dict:
     }
 
 
-def to_sarif(clusters: list[Cluster], triage: list[TriageResult] | None = None) -> dict:
-    verdicts = resolve(clusters, triage)
+def to_sarif(
+    clusters: list[Cluster], triage: list[TriageResult] | None = None, root: Path | None = None
+) -> dict:
+    verdicts = resolve(clusters, triage, root)
     rules: dict[str, dict] = {}
     results: list[dict] = []
     for c in clusters:

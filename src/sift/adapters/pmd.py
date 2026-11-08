@@ -4,7 +4,8 @@ PMD resolves `-R rulesets/java/quickstart.xml` against the working directory bef
 built-in classpath, so a repository could shadow the ruleset (verified with PMD 7.29).
 PMD therefore runs from an empty temp directory with absolute target paths.
 
-Severity: PMD priority 1 -> high, 2 -> medium, 3/4 -> low, 5 -> info.
+Severity: PMD priority 1 -> high, 2 -> medium, 3/4 -> low, 5 -> info. Style rules (naming
+conventions are priority 1) are capped at low, so they never interrupt an edit.
 """
 
 import json
@@ -65,18 +66,20 @@ class PmdAdapter(ToolAdapter):
                 props = rules.get(rule_id, {}).get("properties", {})
                 loc = res["locations"][0]["physicalLocation"]
                 region = loc.get("region", {})
+                category = RULESET_CATEGORY.get(props.get("ruleset", ""), "style")
+                severity = PRIORITY_SEVERITY.get(int(props.get("priority", 3)), "low")
                 findings.append(
                     make_finding(
                         tool=self.name,
                         tool_version=version or driver.get("version", ""),
                         rule_id=rule_id,
                         message=res["message"]["text"],
-                        severity=PRIORITY_SEVERITY.get(int(props.get("priority", 3)), "low"),
+                        severity="low" if category == "style" and severity == "high" else severity,
                         raw_path=loc["artifactLocation"]["uri"],
                         start_line=region.get("startLine", 1),
                         end_line=region.get("endLine"),
                         repo_root=repo_root,
-                        category=RULESET_CATEGORY.get(props.get("ruleset", ""), "style"),
+                        category=category,
                     )
                 )
         return findings

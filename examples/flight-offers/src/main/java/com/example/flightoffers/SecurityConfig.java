@@ -17,6 +17,7 @@ public class SecurityConfig {
         http.csrf(AbstractHttpConfigurer::disable) // stateless API: no session cookie to ride on
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/offers", "/offers/*").permitAll()
                 .anyRequest().authenticated())

@@ -12,3 +12,8 @@ spring:
       # SPRING_SECURITY_USER_PASSWORD environment variable sets it.
       name: ops
       roles: ADMIN
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

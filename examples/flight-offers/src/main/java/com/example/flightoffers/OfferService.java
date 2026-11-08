@@ -13,9 +13,15 @@ public class OfferService {
     private static final Pattern IATA_CODE = Pattern.compile("[A-Z]{3}");
 
     private final OfferRepository repository;
+    private final PricingClient pricing;
 
-    public OfferService(OfferRepository repository) {
+    public OfferService(OfferRepository repository, PricingClient pricing) {
         this.repository = repository;
+        this.pricing = pricing;
+    }
+
+    public java.math.BigDecimal liveQuote(String origin, String destination) {
+        return pricing.quote(requireIata(origin), requireIata(destination));
     }
 
     public List<Offer> search(String origin, String destination) {

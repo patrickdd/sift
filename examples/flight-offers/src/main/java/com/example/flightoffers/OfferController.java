@@ -27,6 +27,11 @@ public class OfferController {
         return service.search(origin, destination);
     }
 
+    @GetMapping("/quote")
+    public java.math.BigDecimal quote(@RequestParam String origin, @RequestParam String destination) {
+        return service.liveQuote(origin, destination);
+    }
+
     @GetMapping("/{id}")
     public Offer get(@PathVariable long id) {
         return service.getById(id);

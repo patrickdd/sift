@@ -11,7 +11,7 @@ mode: `diff` · base: `main` · scanned: `2026-11-08T14:46:13+00:00` · tool tim
 Last 30 lines:
 
 ```
-[ERROR] The goal you specified requires a project to execute but there is no POM in this directory (/private/tmp/claude-501/-Users-patrykd-Documents-Private-Apps-AI-Engineer-projects-AI-assitance-tools-practises-Harnesses-Sift/7887fcf6-df20-4912-8da9-eed5e50b55af/scratchpad/wt). Please verify you invoked Maven from the correct directory. -> [Help 1]
+[ERROR] The goal you specified requires a project to execute but there is no POM in this directory (<scratch-path> Please verify you invoked Maven from the correct directory. -> [Help 1]
 [ERROR] 
 [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
 [ERROR] Re-run Maven using the -X switch to enable full debug logging.

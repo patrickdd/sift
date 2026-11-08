@@ -6,3 +6,8 @@ CREATE TABLE offers (
     price       DECIMAL(10,2) NOT NULL,
     departure   DATE          NOT NULL
 );
+
+CREATE TABLE admin_users (
+    username      VARCHAR(40) PRIMARY KEY,
+    password_hash VARCHAR(64) NOT NULL
+);

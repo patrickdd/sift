@@ -32,8 +32,12 @@ public class OfferRepository {
     }
 
     public List<Offer> search(String origin, String destination) {
-        return jdbc.query(SELECT_OFFER + " WHERE origin = ? AND destination = ? ORDER BY price",
-                OFFER_MAPPER, origin, destination);
+        // Partners send lower-case codes and city names, so compare case-insensitively.
+        String sql = SELECT_OFFER
+                + " WHERE UPPER(origin) = UPPER('" + origin + "')"
+                + " AND UPPER(destination) = UPPER('" + destination + "')"
+                + " ORDER BY price";
+        return jdbc.query(sql, OFFER_MAPPER);
     }
 
     public Optional<Offer> findById(long id) {

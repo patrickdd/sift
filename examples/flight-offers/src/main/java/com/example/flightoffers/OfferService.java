@@ -1,6 +1,8 @@
 package com.example.flightoffers;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
@@ -19,7 +21,10 @@ public class OfferService {
     }
 
     public List<Offer> search(String origin, String destination) {
-        return repository.search(requireIata(origin), requireIata(destination));
+        Set<OfferKey> seen = new HashSet<>();
+        return repository.search(requireIata(origin), requireIata(destination)).stream()
+                .filter(offer -> seen.add(OfferKey.of(offer)))
+                .toList();
     }
 
     public Offer getById(long id) {

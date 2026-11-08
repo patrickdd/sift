@@ -29,6 +29,8 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser("tools", help="list detected tools and versions")
 
+    sub.add_parser("mcp", help="run the MCP server over stdio")
+
     c = sub.add_parser("config", help="resolve validated review settings from .sift.toml")
     c.add_argument("--base", help="base branch given by the user; wins over .sift.toml")
 
@@ -88,6 +90,13 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(_: argparse.Namespace) -> int:
+    from sift.mcp_server import main as serve  # imported here so other commands skip the MCP SDK's startup cost
+
+    serve()
+    return 0
+
+
 def _test_result(args: argparse.Namespace) -> dict | None:
     if not args.test_status:
         return None
@@ -113,7 +122,7 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 COMMANDS = {
     "scan": cmd_scan, "hook-check": cmd_hook_check, "tools": cmd_tools,
-    "config": cmd_config, "report": cmd_report,
+    "config": cmd_config, "report": cmd_report, "mcp": cmd_mcp,
 }
 
 

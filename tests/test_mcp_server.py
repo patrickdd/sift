@@ -1,4 +1,4 @@
-"""End to end over real stdio: start `python -m sift.mcp_server` and call it as a client."""
+"""End to end over real stdio: start `sift mcp` and call it as a client."""
 
 import hashlib
 import json
@@ -26,7 +26,9 @@ def _content(result):
 
 async def _session(repo: Path, calls):
     env = {k: os.environ[k] for k in ("PATH", "HOME") if k in os.environ}
-    params = StdioServerParameters(command=sys.executable, args=["-m", "sift.mcp_server"], cwd=repo, env=env)
+    env["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{env.get('PATH', '')}"  # where `sift` is installed
+    config = json.loads((REPO / ".mcp.json").read_text())["mcpServers"]["sift-mcp"]
+    params = StdioServerParameters(command=config["command"], args=config["args"], cwd=repo, env=env)
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
         await session.initialize()
         return await calls(session)
@@ -123,7 +125,7 @@ def test_redirected_output_directory_is_refused(repo, tmp_path_factory):
 
 def test_plugin_registers_the_server():
     config = json.loads((REPO / ".mcp.json").read_text())
-    assert config["mcpServers"]["sift-mcp"] == {"command": "python", "args": ["-m", "sift.mcp_server"]}
+    assert config["mcpServers"]["sift-mcp"] == {"command": "sift", "args": ["mcp"]}
 
 
 def test_no_logic_duplication_in_the_server():

@@ -313,6 +313,7 @@ enforcement in the report are **[built]**.
 | `sift hook-check <file> [--baseline-ref HEAD]` | Tier 1 backend (§3) | `{file, baseline_ref, new_findings, tools}` |
 | `sift tools` | detected tools, versions, binary paths | one line per adapter |
 | `sift config [--base <ref>]` | resolves and validates settings from `.sift.toml`; only `base` and `severity_threshold` are honoured | `{base, ignored_keys}` |
+| `sift mcp` | runs the MCP server over stdio (same code as `python -m sift.mcp_server`) | the MCP protocol |
 | `sift report --triage <t.json> --findings <scan.json> [--out .sift/out] [--md-name report.md] [--test-status passed\|failed\|skipped] [--test-note <text>] [--test-output <log>]` | writes the Markdown report (default `report.md`) + `review.sarif` | `{report, sarif}` paths |
 
 Exit codes: 0 ok; 1 for git or IO errors, an invalid base, invalid triage, invalid SARIF, or a
@@ -360,7 +361,9 @@ docs/ADDING_AN_ADAPTER.md  README.md                                      [plann
 (`package-dir`). Only `*.yaml`, `*.toml` and `*.ini` are packaged; the deliberately vulnerable
 `.java` and `.py` test cases are not. `normalize.rules_dir()` resolves it via
 `importlib.resources`, so it works from editable, wheel and pipx installs alike (a test builds
-a wheel, installs it into a fresh venv and runs a scan). Python ≥ 3.12; dependencies are only
+a wheel, installs it into a fresh venv and runs a scan). `.mcp.json` starts the server with
+`sift mcp` and no interpreter path, so it works from any pipx, uv or venv install with `sift` on
+`PATH`; without that, the server does not start. Python ≥ 3.12; dependencies are only
 pydantic ≥ 2, PyYAML and `mcp` 2.x (dev: pytest, ruff).
 
 ## 11. Configuration and precedence

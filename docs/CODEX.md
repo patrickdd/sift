@@ -9,14 +9,16 @@ triager subagent or the edit hook.
 
 ## Register the server
 
-Install sift and the analyzers where the server can find them, then add this to
-`~/.codex/config.toml`. Use a Python that has sift installed, ideally by absolute path:
+Install sift (with pipx, uv or into a venv) and the analyzers so that `sift` is on the `PATH` Codex
+starts servers with, then add this to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.sift]
-command = "/path/to/venv/bin/python"
-args = ["-m", "sift.mcp_server"]
+command = "sift"
+args = ["mcp"]
 ```
+
+If `sift` is not on that `PATH`, set `command` to its absolute path.
 
 The server scans the Git repository containing its working directory. If Codex does not start it
 inside your project, add `cwd = "/path/to/repo"` to the entry.

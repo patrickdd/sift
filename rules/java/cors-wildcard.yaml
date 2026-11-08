@@ -1,0 +1,18 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: java.cors-wildcard
+    languages: [java]
+    severity: WARNING
+    message: >-
+      @CrossOrigin allows any origin ("*"). Restrict origins to an explicit allow-list.
+    metadata:
+      cwe: "CWE-942"
+      category: security
+    pattern-either:
+      - pattern: '@CrossOrigin("*")'
+      - pattern: '@CrossOrigin(origins = "*", ...)'
+      - pattern: '@CrossOrigin(value = "*", ...)'
+      - pattern: '@CrossOrigin(origins = {..., "*", ...}, ...)'
+      - pattern: '@CrossOrigin({..., "*", ...})'

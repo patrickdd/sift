@@ -1,0 +1,38 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: python.sql-fstring
+    languages: [python]
+    severity: ERROR
+    message: >-
+      SQL passed to $CUR.$EXEC() is built with an f-string, % formatting,
+      .format() or concatenation. Use driver placeholders and pass parameters separately.
+    metadata:
+      cwe: "CWE-89"
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: $CUR.$EXEC(f"...", ...)
+          - pattern: $CUR.$EXEC("..." % $ARGS, ...)
+          - pattern: $CUR.$EXEC("...".format(...), ...)
+          - pattern: $CUR.$EXEC("..." + $X, ...)
+          - pattern: $CUR.$EXEC($X + "...", ...)
+          - patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      $Q = f"..."
+                      ...
+                  - pattern-inside: |
+                      $Q = "..." % $ARGS
+                      ...
+                  - pattern-inside: |
+                      $Q = "...".format(...)
+                      ...
+                  - pattern-inside: |
+                      $Q = "..." + $X
+                      ...
+              - pattern: $CUR.$EXEC($Q, ...)
+      - metavariable-regex:
+          metavariable: $EXEC
+          regex: ^(execute|executemany|executescript|raw|text)$

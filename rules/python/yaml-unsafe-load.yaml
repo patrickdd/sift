@@ -1,0 +1,33 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: python.yaml-unsafe-load
+    languages: [python]
+    severity: ERROR
+    message: >-
+      yaml.$FN() can construct arbitrary Python objects from untrusted input.
+      Use yaml.safe_load() or Loader=yaml.SafeLoader.
+    metadata:
+      cwe: "CWE-502"
+      category: security
+    pattern-either:
+      - patterns:
+          - pattern: yaml.$FN(...)
+          - metavariable-regex:
+              metavariable: $FN
+              regex: ^(unsafe_load|unsafe_load_all|full_load|full_load_all)$
+      - patterns:
+          - pattern-either:
+              - pattern: yaml.$FN($DATA)
+              - pattern: yaml.$FN($DATA, Loader=$LOADER)
+              - pattern: yaml.$FN($DATA, $LOADER)
+          - metavariable-regex:
+              metavariable: $FN
+              regex: ^(load|load_all)$
+          - pattern-not: yaml.$FN($DATA, Loader=yaml.SafeLoader)
+          - pattern-not: yaml.$FN($DATA, Loader=yaml.CSafeLoader)
+          - pattern-not: yaml.$FN($DATA, Loader=SafeLoader)
+          - pattern-not: yaml.$FN($DATA, Loader=CSafeLoader)
+          - pattern-not: yaml.$FN($DATA, yaml.SafeLoader)
+          - pattern-not: yaml.$FN($DATA, SafeLoader)

@@ -1,0 +1,59 @@
+[
+  {
+    "cell": null,
+    "code": "S608",
+    "end_location": {
+      "column": 61,
+      "row": 6
+    },
+    "filename": "/repo/app.py",
+    "fix": null,
+    "location": {
+      "column": 17,
+      "row": 6
+    },
+    "message": "Possible SQL injection vector through string-based query construction",
+    "name": "hardcoded-sql-expression",
+    "noqa_row": 6,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/hardcoded-sql-expression"
+  },
+  {
+    "cell": null,
+    "code": "S602",
+    "end_location": {
+      "column": 20,
+      "row": 7
+    },
+    "filename": "/repo/app.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 7
+    },
+    "message": "`subprocess` call with `shell=True` identified, security issue",
+    "name": "subprocess-popen-with-shell-equals-true",
+    "noqa_row": 7,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/subprocess-popen-with-shell-equals-true"
+  },
+  {
+    "cell": null,
+    "code": "S506",
+    "end_location": {
+      "column": 21,
+      "row": 8
+    },
+    "filename": "/repo/app.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 8
+    },
+    "message": "Probable use of unsafe `yaml.load`. Allows instantiation of arbitrary objects. Consider `yaml.safe_load`.",
+    "name": "unsafe-yaml-load",
+    "noqa_row": 8,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unsafe-yaml-load"
+  }
+]

@@ -1,0 +1,33 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: java.runtime-exec-nonconstant
+    languages: [java]
+    severity: ERROR
+    message: >-
+      An OS command is built from a non-constant value. If any part is user-controlled
+      this is command injection; pass a fixed argv array and validate arguments.
+    metadata:
+      cwe: "CWE-78"
+      category: security
+    pattern-either:
+      - patterns:
+          - pattern-either:
+              - pattern: Runtime.getRuntime().exec($CMD, ...)
+              - pattern: (Runtime $R).exec($CMD, ...)
+          - pattern-not: Runtime.getRuntime().exec("...", ...)
+          - pattern-not: (Runtime $R).exec("...", ...)
+          - pattern-not: Runtime.getRuntime().exec(new String[]{"...", ...}, ...)
+      - patterns:
+          - pattern-either:
+              - pattern: new ProcessBuilder(..., $ARG, ...)
+              - pattern: new ProcessBuilder(List.of(..., $ARG, ...))
+              - pattern: new ProcessBuilder(Arrays.asList(..., $ARG, ...))
+          - metavariable-pattern:
+              metavariable: $ARG
+              patterns:
+                - pattern: $ANY
+                - pattern-not: '"..."'
+                - pattern-not: List.of(...)
+                - pattern-not: Arrays.asList(...)

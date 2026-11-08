@@ -1,0 +1,29 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: java.jdbc-string-concat
+    languages: [java]
+    severity: ERROR
+    message: >-
+      SQL passed to $METH() is built from method parameter '$P' (concatenation,
+      String.format, or passed directly). Use bind parameters (? or :name) instead.
+    metadata:
+      cwe: "CWE-89"
+      category: security
+    mode: taint
+    pattern-sources:
+      - patterns:
+          - pattern-inside: |
+              $RET $M(..., $T $P, ...) { ... }
+          - pattern: $P
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: (JdbcTemplate $RECV).$METH($SQL, ...)
+              - pattern: (NamedParameterJdbcTemplate $RECV).$METH($SQL, ...)
+              - pattern: (EntityManager $RECV).$METH($SQL, ...)
+          - metavariable-regex:
+              metavariable: $METH
+              regex: ^(query|queryForObject|queryForList|queryForMap|queryForRowSet|queryForStream|update|batchUpdate|execute|createQuery|createNativeQuery)$
+          - focus-metavariable: $SQL

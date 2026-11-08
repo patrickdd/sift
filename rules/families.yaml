@@ -1,0 +1,66 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+#
+# Rule families: tool rule ids that describe the same defect share a family, so the
+# same issue reported by several tools on the same line fingerprints identically and
+# clusters together. A rule not listed here gets the family "<tool>:<rule_id>".
+# "*" matches every rule of that tool. A family's category/cwe override the adapter's guess.
+families:
+  sql-injection:
+    category: security
+    cwe: CWE-89
+    members:
+      semgrep: [java.jdbc-string-concat, python.sql-fstring]
+      bandit: [B608]
+      ruff: [S608]
+  command-injection:
+    category: security
+    cwe: CWE-78
+    members:
+      semgrep: [java.runtime-exec-nonconstant, python.subprocess-shell-true]
+      bandit: [B602, B605]
+      ruff: [S602, S605]
+  unsafe-deserialization:
+    category: security
+    cwe: CWE-502
+    members:
+      semgrep: [python.yaml-unsafe-load]
+      bandit: [B506, B301]
+      ruff: [S506, S301]
+  weak-hash:
+    category: security
+    cwe: CWE-328
+    members:
+      semgrep: [java.weak-hash]
+      bandit: [B303, B324]
+      ruff: [S303, S324]
+  hardcoded-secret:
+    category: secret
+    cwe: CWE-798
+    members:
+      semgrep: [java.hardcoded-secret-value]
+      bandit: [B105, B106, B107]
+      ruff: [S105, S106, S107]
+      gitleaks: ["*"]
+  empty-catch:
+    category: bug
+    cwe: CWE-390
+    members:
+      pmd: [EmptyCatchBlock]
+      bandit: [B110]
+      ruff: [S110]
+  unused-variable:
+    category: style
+    members:
+      pmd: [UnusedLocalVariable]
+      ruff: [F841]
+  insecure-cors:
+    category: security
+    cwe: CWE-942
+    members:
+      semgrep: [java.cors-wildcard]
+  missing-authorization:
+    category: security
+    cwe: CWE-862
+    members:
+      semgrep: [java.permit-all-sensitive]

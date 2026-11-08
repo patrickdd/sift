@@ -1,0 +1,19 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: python.subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >-
+      subprocess.$FN() runs a non-constant command with shell=True. Pass an argv
+      list without shell=True, or quote with shlex.quote().
+    metadata:
+      cwe: "CWE-78"
+      category: security
+    patterns:
+      - pattern: subprocess.$FN($CMD, ..., shell=True, ...)
+      - metavariable-regex:
+          metavariable: $FN
+          regex: ^(run|call|check_call|check_output|Popen)$
+      - pattern-not: subprocess.$FN("...", ...)

@@ -1,0 +1,22 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: java.permit-all-sensitive
+    languages: [java]
+    severity: ERROR
+    message: >-
+      permitAll() is applied to a sensitive path ($PATH). Admin/internal endpoints
+      should require authentication and an explicit role.
+    metadata:
+      cwe: "CWE-862"
+      category: security
+    patterns:
+      - pattern: $X.$MATCHER(..., $PATH, ...).permitAll()
+      - metavariable-regex:
+          metavariable: $MATCHER
+          regex: ^(requestMatchers|antMatchers|mvcMatchers|regexMatchers)$
+      - metavariable-regex:
+          metavariable: $PATH
+          regex: ^"[\^]?/*(api/)?(admin|internal|actuator|management)\b
+      - focus-metavariable: $PATH

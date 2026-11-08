@@ -1,0 +1,21 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# Original rule written for sift; not derived from the Semgrep registry.
+rules:
+  - id: java.weak-hash
+    languages: [java]
+    severity: WARNING
+    message: >-
+      MessageDigest.getInstance($ALG) uses a broken hash algorithm. Use SHA-256 or
+      stronger, and a password KDF (bcrypt/scrypt/Argon2) for passwords.
+    metadata:
+      cwe: "CWE-328"
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: MessageDigest.getInstance($ALG)
+          - pattern: MessageDigest.getInstance($ALG, $PROVIDER)
+          - pattern: java.security.MessageDigest.getInstance($ALG, ...)
+      - metavariable-regex:
+          metavariable: $ALG
+          regex: (?i)^"(md2|md4|md5|sha-?1|sha)"$

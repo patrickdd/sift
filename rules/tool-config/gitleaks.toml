@@ -1,0 +1,6 @@
+# Copyright (c) 2026 sift contributors
+# SPDX-License-Identifier: MIT
+# sift always passes this file via --config so a repository's own .gitleaks.toml
+# (which could allowlist everything) is never loaded. It only enables gitleaks' defaults.
+[extend]
+useDefault = true

@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: flight-offers
+  datasource:
+    url: jdbc:h2:mem:offers;DB_CLOSE_DELAY=-1
+  sql:
+    init:
+      mode: always
+  security:
+    user:
+      # No password here: Spring Boot generates one at startup unless the
+      # SPRING_SECURITY_USER_PASSWORD environment variable sets it.
+      name: ops
+      roles: ADMIN

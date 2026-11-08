@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from sift.packet import build_packet
 from sift.report import load_triage, render_report
 from sift.sarif import to_sarif
 
+TEST_TIMEOUT_SECONDS = 600
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="sift", description="Deterministic tools find, the LLM triages.")
@@ -22,6 +24,8 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--format", choices=["packet", "sarif", "md", "json"], default="packet")
     s.add_argument("--all", action="store_true", help="ignore the diff and scan every file")
     s.add_argument("--output", type=Path, help="write to this file instead of stdout")
+    s.add_argument("--test-command", help="shell command run from the current directory after the scan; "
+                                          "only ever taken from here, never from repository config")
 
     h = sub.add_parser("hook-check", help="new findings in one file vs. a baseline ref")
     h.add_argument("file")
@@ -49,9 +53,23 @@ def _emit(text: str) -> None:
     sys.stdout.write(text if text.endswith("\n") else text + "\n")
 
 
+def _run_tests(command: str) -> dict:
+    """Run the user's test command. A failing test is reported; it does not fail the scan."""
+    try:
+        proc = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,  # noqa: S602
+                              text=True, errors="replace", timeout=TEST_TIMEOUT_SECONDS, check=False)
+    except subprocess.TimeoutExpired:
+        return {"status": "failed", "tail": "", "note": f"timed out after {TEST_TIMEOUT_SECONDS}s"}
+    if proc.returncode == 0:
+        return {"status": "passed", "tail": "", "note": None}
+    return {"status": "failed", "tail": "\n".join(proc.stdout.splitlines()[-30:]), "note": None}
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     root = pipeline.find_root()
     result, clusters = pipeline.scan(root, base=args.base, paths=args.paths, all_mode=args.all)
+    if args.test_command:
+        result.tests = _run_tests(args.test_command)
     if args.format == "json":
         text = result.model_dump_json(indent=2)
     elif args.format == "packet":
@@ -60,7 +78,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
         text = json.dumps(to_sarif(clusters, root=root), indent=2)
     else:
         meta = {"mode": result.mode, "base": result.base, "elapsed": f"{result.seconds:.1f}s"}
-        text = render_report(clusters, None, result.tools, meta=meta, notes=result.notes, root=root)
+        text = render_report(clusters, None, result.tools, meta=meta, tests=result.tests, notes=result.notes,
+                             root=root)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(text.rstrip("\n") + "\n", encoding="utf-8")
@@ -110,9 +129,10 @@ def _test_result(args: argparse.Namespace) -> dict | None:
 def cmd_report(args: argparse.Namespace) -> int:
     triage = load_triage(args.triage)
     args.out.mkdir(parents=True, exist_ok=True)
+    scan = store.load_scan(args.findings)
     paths, problems = store.write_outputs(
-        store.load_scan(args.findings), args.out, root=pipeline.find_root(), triage=triage,
-        md_name=args.md_name, tests=_test_result(args),
+        scan, args.out, root=pipeline.find_root(), triage=triage,
+        md_name=args.md_name, tests=_test_result(args) or scan.tests,
     )
     for problem in problems:
         print(f"sift: sarif: {problem}", file=sys.stderr)

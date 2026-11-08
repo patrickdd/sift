@@ -75,6 +75,8 @@ class ScanResult(BaseModel):
     seconds: float = 0.0
     tools: list[ToolRun] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
+    raw_findings: int = 0  # in-scope findings before dedupe
+    tests: dict | None = None  # {status, tail, note} when --test-command was given
     notes: list[str] = Field(default_factory=list)  # scope problems the report must show
     secret_lines: dict[str, list[int]] = Field(default_factory=dict)  # path -> lines never to show
 

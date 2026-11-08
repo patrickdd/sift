@@ -106,6 +106,7 @@ def scan(root: Path, *, base: str = "main", paths: list[str] | None = None,
         f.in_diff = diff.in_diff(changed, f.path, f.start_line, f.end_line)
     if not all_mode:
         findings = [f for f in findings if f.in_diff]
+    raw_findings = len(findings)
     clusters = cluster(dedupe(findings))
     result = ScanResult(
         mode="all" if all_mode else "diff",
@@ -113,6 +114,7 @@ def scan(root: Path, *, base: str = "main", paths: list[str] | None = None,
         seconds=round(time.monotonic() - start, 2),
         tools=runs,
         findings=[f for c in clusters for f in c.members],
+        raw_findings=raw_findings,
         notes=notes,
         secret_lines=secret_lines,
     )

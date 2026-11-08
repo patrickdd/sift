@@ -309,7 +309,7 @@ enforcement in the report are **[built]**.
 
 | Command | Behaviour | stdout |
 |---|---|---|
-| `sift scan [--base main] [--paths …] [--format packet\|sarif\|md\|json] [--all] [--output <file>]` | diff-scoped by default; `--all` scans every git-visible file (or walks the directory outside git) and keeps out-of-diff findings with `in_diff=false` | the chosen format (`json` = `ScanResult`) |
+| `sift scan [--base main] [--paths …] [--format packet\|sarif\|md\|json] [--all] [--output <file>] [--test-command <cmd>]` | diff-scoped by default; `--all` scans every git-visible file (or walks the directory outside git) and keeps out-of-diff findings with `in_diff=false` | the chosen format (`json` = `ScanResult`) |
 | `sift hook-check <file> [--baseline-ref HEAD]` | Tier 1 backend (§3) | `{file, baseline_ref, new_findings, tools}` |
 | `sift tools` | detected tools, versions, binary paths | one line per adapter |
 | `sift config [--base <ref>]` | resolves and validates settings from `.sift.toml`; only `base` and `severity_threshold` are honoured | `{base, ignored_keys}` |
@@ -471,14 +471,13 @@ That is a prompt-level control. `allowed-tools` pre-approves tools; it does not 
 
 ## 14. Benchmark design
 
-**[planned: phase 4]**
-- **Corpus:** seeded-bug branches on `examples/flight-offers` (Spring Boot), plus a few on
-  `examples/pyservice`. Each branch injects known defects into realistic code; clean
+**[built]** `uv run python bench/bench.py`; the Python `examples/pyservice` corpus is not built.
+- **Corpus:** seeded-bug branches on `examples/flight-offers` (Spring Boot). Each branch injects known defects into realistic code; clean
   "decoy" branches add code that looks risky but is safe.
 - **Ground truth:** `bench/ground_truth.yaml`, one entry per seeded bug: branch, path,
-  line range, family, CWE, and whether it is real or a decoy.
+  line range, category, CWE, and whether it is real or a decoy.
 - **Matching:** a reported cluster matches a ground-truth entry when the path is equal, the
-  line ranges overlap and the family is equal.
+  line ranges overlap and the category is equal.
 - **Metrics** (`bench/bench.py` → `bench/results.md`):
   - deterministic recall: seeded bugs found by any tool;
   - post-triage recall: seeded bugs kept as true positive or needs_human;

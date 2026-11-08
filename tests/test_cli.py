@@ -119,3 +119,15 @@ def test_report_skipped_tests_line(capsys, monkeypatch, repo):
                      "--out", "o", "--test-status", "skipped")
     assert code == 0
     assert "## Tests: skipped (no test_command configured)" in (repo / "o" / "report.md").read_text()
+
+
+@requires("ruff")
+def test_scan_test_command_recorded_and_failure_keeps_exit_zero(capsys, monkeypatch, repo):
+    (repo / "a.py").write_text("x = 1\n")
+    code, out, _ = run(
+        capsys, monkeypatch, repo, "scan", "--format", "json", "--test-command", "echo boom; exit 3"
+    )
+    data = json.loads(out)
+    assert code == 0
+    assert data["tests"]["status"] == "failed" and "boom" in data["tests"]["tail"]
+    assert data["raw_findings"] == len(data["findings"]) == 0

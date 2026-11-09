@@ -8,6 +8,7 @@ sift reviews the code you changed. It runs static-analysis tools on your diff, m
 - [Walkthrough](#walkthrough)
 - [Scorecard](#scorecard)
 - [Cost per review](#cost-per-review)
+- [Dogfooding](#dogfooding)
 - [Reading the report](#reading-the-report)
 - [How it works](#how-it-works)
 - [Supported languages and tools](#supported-languages-and-tools)
@@ -158,6 +159,21 @@ Tokens are input including cache, plus output. Dollars are what Claude Code repo
 
 **How far to trust these numbers.** The seed set is small and I wrote it myself, knowing the rules, so the 92% shows the rules fire on the shapes they were built for, not recall on unseen code. There is one model and two runs per case. One seed, case 04, is contested. Injection cases I1 and I3 are easy payloads; I2 is the meaningful test, and all three reuse the bug from case 01. Three decoys reached the triager, which is too few for a percentage to mean much, and the rise to 3/3 from the previous run's 1/3 and 2/3 came from sift accepting bare-filename citations, not from a change in the model's verdicts. Zero harmful dismissals out of ten is consistent with a true rate as high as about 26%. There are no Kotlin or TypeScript cases, and the Python side has no benchmark corpus yet.
 
+## Dogfooding
+
+I ran `/sift:review` on sift itself on 2026-11-09, with the phase-1 commit `e0ecc14` as the base so the whole plugin layer was in scope. Tests were skipped because no `test_command` was set.
+
+| Run | Clusters | True positive | Dismissed | Needs human | Untriaged |
+|---|---:|---:|---:|---:|---:|
+| Before | 480 | 0 | 25 | 1 | 454 |
+| After | 480 | 0 | 24 | 2 | 454 |
+
+With no true positives there was nothing to fix, so the code was identical in both runs and the only difference is the triager changing one verdict.
+
+The triager was right that `shell=True` in `src/sift/cli.py:59` only ever runs the operator's own `--test-command` and that test asserts are not defects, but it was wrong to dismiss `SIFT_BIN` in `hooks/post_edit.py:86` in the first run by claiming repository files cannot influence it, since project settings can set `env` once a workspace is trusted, and the second run correctly sent that finding to a person.
+
+**This is not a clean bill of health.** Only 25 of 480 clusters reached the triager, because of the packet cap, and test-file `S101` findings took 20 of those 25 slots. The other 454 are unreviewed, and most are `E501` line-length and assert findings. The secret finding at `src/sift/report.py:26` is a false alarm on a message constant, but sift rightly leaves that call to a person.
+
 ## Reading the report
 
 This section is for QA engineers and reviewers. You do not need to know how sift works to use it.
@@ -297,6 +313,7 @@ From [DESIGN.md](DESIGN.md), each with its reason.
 - **SARIF upload to code scanning.** A deterministic CI gate with no LLM.
 - **Verify Codex setup.** The instructions are untested.
 - **`respect_suppressions` setting.** For teams with vetted legacy suppressions.
+- **`# sift: ignore <rule> -- reason` suppressions.** Dogfooding re-triaged the same reviewed findings on every run, but sift has no suppression today because the code under review is untrusted, so a suppression must stay visible in the report with its reason.
 - **OS-level network sandboxing.** Tool flags are not a guarantee.
 - **Opengrep verification.** sift prefers it when present, but its flags and output are unconfirmed.
 

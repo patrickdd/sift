@@ -3,7 +3,7 @@
 Each record: cluster id, rule, severity, cwe, tools_agreeing, path:lines, enclosing
 function/method signature (cheap regex), message, and up to +/-15 lines of context.
 Budget: ~300 tokens per record, approximated as chars/4 (1200 chars); context shrinks
-until the record fits. Cap: 25 clusters by severity x tools_agreeing; the rest are
+until the record fits. Cap: 25 clusters by severity, then tools_agreeing; the rest are
 summarised by count. Everything repo-controlled (code, path, signature, tool message) sits
 inside an UNTRUSTED CODE envelope whose random delimiter occurs in none of it. Secret
 clusters are withheld, and any line flagged as a secret is masked wherever it would appear.
@@ -15,7 +15,7 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
-from sift.dedupe import Cluster
+from sift.dedupe import Cluster, _order
 from sift.finding import SEVERITIES
 from sift.normalize import mask_lines, read_lines, secret_line_map
 
@@ -171,7 +171,7 @@ def build_packet(
         hidden[path] = sorted({*hidden.get(path, ()), *numbers})
     withheld = [c for c in clusters if c.is_secret]
     triageable = [c for c in clusters if not c.is_secret]
-    ordered = sorted(triageable, key=lambda c: (-c.priority(), c.path, c.start_line))
+    ordered = sorted(triageable, key=_order)
     head, rest = ordered[:cap], ordered[cap:]
     delim = delimiter or _delimiter(head, root)
     budget = tokens_per_record * CHARS_PER_TOKEN

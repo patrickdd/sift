@@ -3,7 +3,8 @@
 Runs with --isolated (the repo's ruff config cannot deselect or exclude rules),
 --ignore-noqa (in-repo "# noqa" cannot silence findings) and --no-cache (no writes).
 
-Severity: E9xx (syntax errors) -> high; S, B, F -> medium; other E -> low.
+Severity: E9xx (syntax errors) -> high; S101 (assert) -> low, as Bandit rates B101; other
+S, B, F -> medium. Style rules such as E501 are not selected.
 Category: S -> security, B/F -> bug, E -> style.
 """
 
@@ -18,6 +19,8 @@ from sift.normalize import make_finding
 def _severity(code: str) -> str:
     if code.startswith("E9"):
         return "high"
+    if code == "S101":
+        return "low"
     if code[:1] in ("S", "B", "F"):
         return "medium"
     return "low"
@@ -37,7 +40,7 @@ class RuffAdapter(ToolAdapter):
         return [[
             binary, "check",
             "--output-format", "json",
-            "--select", "E,F,B,S",
+            "--select", "F,B,S,E9",
             "--isolated", "--ignore-noqa", "--no-cache", "--exit-zero",
             *paths,
         ]]

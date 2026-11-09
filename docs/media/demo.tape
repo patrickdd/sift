@@ -1,4 +1,7 @@
-# VHS tape: edit -> hook nudge -> /sift:review -> report.
+# VHS tape: edit -> hook nudge -> /sift:review -> reasoned false-positive dismissal, with a hardening fix.
+# The edit concatenates SQL on main, where OfferService.search still applies requireIata, so the
+# triager dismisses the finding citing that guard and suggests bind parameters. It is not a
+# true-positive report. Verdicts come from a live model and can differ between recordings.
 # Requires the sift plugin to be installed (see README: /plugin marketplace add + /plugin install).
 # Drives a live, logged-in Claude Code session and spends real tokens.
 # Run from the repository root: vhs docs/media/demo.tape

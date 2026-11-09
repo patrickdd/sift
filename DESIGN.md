@@ -141,9 +141,14 @@ call is re-wrapped across lines, and whitespace inside string literals is collap
 |---|---|---|
 | Semgrep / Opengrep | `ERROR` / `WARNING` / `INFO` (rule metadata `sift_severity` overrides) | high / medium / low |
 | PMD | rule priority 1 / 2 / 3 / 4 / 5; style rules (e.g. naming) capped at low | high / medium / low / low / info |
-| Ruff | `E9xx` or syntax error (code `null`) · `S*`, `B*`, `F*` · other `E*` | high · medium · low |
+| Ruff | `E9xx` or syntax error (code `null`) · `S101` · other `S*`, `B*`, `F*` | high · low · medium |
 | Bandit | `issue_severity` HIGH / MEDIUM / LOW; one step lower if `issue_confidence` is LOW | high / medium / low |
 | gitleaks | any leak | high |
+
+**Ruff selection: `F,B,S,E9`.** `E501` and the other pycodestyle `E` rules are not run, because
+sift reviews for bugs and security and line length is style noise: on sift's own code it was 276
+of 480 clusters. `E9` stays because syntax errors stop the file being analysed. `S101` is low,
+matching Bandit's `B101`: an assert is rarely a defect, and rated medium it filled the packet.
 
 A cluster's severity is that of its representative: the member with the highest severity,
 then most tools agreeing, then earliest line.
@@ -216,7 +221,7 @@ Implemented adapters and their exact invocations:
 |---|---|---|
 | semgrep | `{opengrep\|semgrep} --config <rules>/java --config <rules>/python --json --quiet --metrics=off --disable-version-check --disable-nosem <paths>` (only the languages present) | repo root |
 | pmd | `pmd check -d <abs path>… -R rulesets/java/quickstart.xml -f sarif --no-cache --no-progress --suppress-marker SIFT_<random>`; exit 4 = violations | **empty temp dir** |
-| ruff | `ruff check --output-format json --select E,F,B,S --isolated --ignore-noqa --no-cache --exit-zero <paths>` | repo root |
+| ruff | `ruff check --output-format json --select F,B,S,E9 --isolated --ignore-noqa --no-cache --exit-zero <paths>` | repo root |
 | bandit | `bandit -r -f json -q --ini <rules>/tool-config/bandit.ini --ignore-nosec <paths>` | repo root |
 | gitleaks | `gitleaks dir <path> --config <rules>/tool-config/gitleaks.toml --gitleaks-ignore-path <rules>/tool-config --ignore-gitleaks-allow --report-format json --report-path - --exit-code 0 --redact --no-banner --log-level error` (one process per file, 8 in parallel) | repo root |
 
@@ -242,7 +247,7 @@ UNTRUSTED CODE <delim>>>>
 - **Budget:** ~300 tokens per record, approximated as `chars / 4` = 1200 characters. The context
   radius shrinks one line at a time (down to ±2) until the record fits. A still-oversized
   flagged span is truncated from the end with a marker, so its last lines can be lost.
-- **Cap:** 25 clusters, ordered by `severity_rank × len(tools_agreeing)`
+- **Cap:** 25 clusters, ordered by `severity_rank`, then `len(tools_agreeing)` within a severity, so a medium always outranks a low
   (rank critical 5 … info 1). The rest appear only as a count summary by severity and by
   `tool:rule`.
 - **Data envelope:** a random 16-hex-character delimiter, regenerated until it occurs in none

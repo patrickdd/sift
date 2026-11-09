@@ -71,3 +71,23 @@ def test_java_signature():
         "            return jdbc.queryForList(\"...\" + name);",
     )
     assert enclosing_signature(src, 5, "A.java") == "public List<Map<String, Object>> find(String name)"
+
+
+def test_medium_always_outranks_low_in_packet_order(tmp_path):
+    _write(tmp_path, "a.py", ["low_a()", "low_b()"])
+    _write(tmp_path, "z.py", ["medium()"])
+    low = make(path="a.py", start_line=1, end_line=1, snippet="low_a()", severity="low",
+               rule_family="low-fam", tools_agreeing=["bandit", "ruff", "semgrep"])
+    medium = make(path="z.py", start_line=1, end_line=1, snippet="medium()", severity="medium",
+                  rule_family="medium-fam", tool="ruff")
+    records = _records(build_packet(cluster(dedupe([low, medium])), tmp_path, delimiter="D"))
+    assert ["· medium ·" in r for r in records] == [True, False]
+
+
+def test_tools_agreeing_breaks_ties_within_a_severity(tmp_path):
+    _write(tmp_path, "a.py", ["one()"])
+    _write(tmp_path, "z.py", ["two()"])
+    one = make(path="a.py", snippet="one()", rule_family="one-fam")
+    two = make(path="z.py", snippet="two()", rule_family="two-fam", tools_agreeing=["bandit", "ruff"])
+    records = _records(build_packet(cluster(dedupe([one, two])), tmp_path, delimiter="D"))
+    assert "z.py" in records[0]

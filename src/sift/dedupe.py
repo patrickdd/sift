@@ -53,9 +53,9 @@ class Cluster:
     def is_secret(self) -> bool:
         return any(f.category == "secret" for f in self.members)
 
-    def priority(self) -> int:
-        """Packet ordering: severity rank x number of agreeing tools."""
-        return SEVERITY_RANK[self.severity] * len(self.tools)
+    def priority(self) -> tuple[int, int]:
+        """Packet ordering: severity first, then number of agreeing tools within a severity."""
+        return SEVERITY_RANK[self.severity], len(self.tools)
 
 
 def dedupe(findings: list[Finding]) -> list[Finding]:
@@ -83,6 +83,12 @@ def dedupe(findings: list[Finding]) -> list[Finding]:
         if n:  # a later identical line: distinct and order-stable, so a baseline can count them
             f.id = hashlib.sha256(f"{f.id}\x1f{n}".encode()).hexdigest()
     return list(merged.values())
+
+
+def _order(c: Cluster) -> tuple[int, int, str, int]:
+    """Sort key: highest priority first, then path and line so the order is stable."""
+    rank, tools = c.priority()
+    return -rank, -tools, c.path, c.start_line
 
 
 def _cluster_id(members: list[Finding]) -> str:
@@ -118,5 +124,5 @@ def cluster(findings: list[Finding]) -> list[Cluster]:
         for f in c.members:
             f.cluster_id = c.id
             f.tools_agreeing = tools
-    clusters.sort(key=lambda c: (-c.priority(), c.path, c.start_line))
+    clusters.sort(key=_order)
     return clusters

@@ -81,3 +81,19 @@ def test_cross_tool_same_line_shares_fingerprint():
         if f.rule_family == "sql-injection"
     }
     assert len(ids) == 1
+
+
+def test_ruff_rates_assert_low_like_bandit_b101():
+    from sift.adapters.ruff import _severity
+
+    assert _severity("S101") == "low"
+    assert _severity("S603") == "medium"
+
+
+def test_ruff_selection_keeps_syntax_errors_and_drops_style():
+    from pathlib import Path
+
+    from sift.adapters.ruff import RuffAdapter
+
+    argv = RuffAdapter().commands("ruff", ["a.py"], Path("."))[0]
+    assert argv[argv.index("--select") + 1] == "F,B,S,E9"

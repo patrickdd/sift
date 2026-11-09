@@ -62,16 +62,16 @@ To have `/sift:review` run your tests, set `test_command` with `/plugin configur
 
 ## Walkthrough
 
-This uses the demo service in `examples/flight-offers` and the seeded branch `bug/01-sql-concat`.
+This follows the recording below, a live Claude Code session on the demo service in `examples/flight-offers`, starting from `main`.
 
-**1. An edit introduces a bug.** Claude Code edits a Java file so that request values are concatenated into SQL.
+**1. An edit makes a query look unsafe.** Claude Code is asked to concatenate `origin` and `destination` into the SQL string in `OfferRepository.search`. `OfferService.search` still validates both values with `requireIata`, so the change looks dangerous but is not exploitable through that path.
 
 **2. The hook nudges.** After the edit, a hook checks that one file. It stays silent unless there is a new finding of high severity or above. Here it prints this line, which Claude sees:
 
-![Terminal recording of the hook nudge (placeholder until recorded with docs/media/demo.tape)](docs/media/hook.gif)
+![Terminal recording: the hook flags the SQL concatenation on the edit, then /sift:review dismisses the finding, citing the requireIata guard, and suggests bind parameters as hardening](docs/media/hook.gif)
 
 ```
-examples/flight-offers/src/main/java/com/example/flightoffers/OfferRepository.java:40 [semgrep/java.jdbc-string-concat] SQL passed to query() is built from method parameter 'destination' (concatenation, String.format, or passed directly). Use bind parameters (? or :name) instead.
+examples/flight-offers/src/main/java/com/example/flightoffers/OfferRepository.java:35 [semgrep/java.jdbc-string-concat] SQL passed to query() is built from method parameter 'destination' (concatenation, String.format, or passed directly). Use bind parameters (? or :name) instead.
 ```
 
 No LLM ran for that message. It came straight from Semgrep.
@@ -82,9 +82,13 @@ No LLM ran for that message. It came straight from Semgrep.
 /sift:review main
 ```
 
-sift scans your changes against `main`, runs the test command, passes the evidence packet to the triager, and prints the report.
+sift scans your changes against `main`, runs your test command if you set one, passes the evidence packet to the triager, and prints the report.
 
-**4. You read the report.** Here is a true positive, verbatim from [docs/examples/review-sample.md](docs/examples/review-sample.md):
+**4. You read the report.** In the recording, the finding is dismissed as a false positive, with its reasoning kept in the report's Dismissed section. The dismissal traces the `@RequestParam` values from `OfferController.java:26-27` to `OfferService.java:22`, which passes both through `requireIata`. That guard, at `OfferService.java:35-39`, does a full-string match against `[A-Z]{3}` and returns a 400 for anything else, so a quote cannot reach the query. The triager also found no other caller of `OfferRepository.search`.
+
+The code is still fragile, because a future caller that skipped the service would be injectable. So the dismissal comes with a hardening fix: use bind parameters in `OfferRepository.search`.
+
+**More examples from real runs.** The recording shows no true positive. When the guard is missing, the verdict changes. This true positive comes from the seeded branch `bug/01-sql-concat`, where `search` does not validate its input, verbatim from [docs/examples/review-sample.md](docs/examples/review-sample.md):
 
 > - **java.jdbc-string-concat** (sql-injection · CWE-89) `examples/flight-offers/src/main/java/com/example/flightoffers/OfferRepository.java:40` — semgrep
 >   SQL passed to query() is built from method parameter 'destination' (concatenation, String.format, or passed directly). Use bind parameters (? or :name) instead.
@@ -107,7 +111,7 @@ sift scans your changes against `main`, runs the test command, passes the eviden
 >     ```
 >   <sub>C-845fc615d9</sub>
 
-That branch has nothing to dismiss, so this audited dismissal comes from a second real run on `bug/D3-permit-all-health`, verbatim from [docs/examples/review-sample-dismissal.md](docs/examples/review-sample-dismissal.md). This code is safe, and the dismissal says why, with citations you can open and check:
+This second dismissal comes from a run on `bug/D3-permit-all-health`, verbatim from [docs/examples/review-sample-dismissal.md](docs/examples/review-sample-dismissal.md). This code is safe, and the dismissal says why, with citations you can open and check:
 
 > - **java.permit-all-sensitive** (missing-authorization · CWE-862) `examples/flight-offers/src/main/java/com/example/flightoffers/SecurityConfig.java:20` — semgrep
 >   permitAll() is applied to a sensitive path ("/actuator/health"). Admin/internal endpoints should require authentication and an explicit role.
@@ -166,13 +170,16 @@ I ran `/sift:review` on sift itself on 2026-11-09, with the phase-1 commit `e0ec
 | Run | Clusters | True positive | Dismissed | Needs human | Untriaged |
 |---|---:|---:|---:|---:|---:|
 | Before | 480 | 0 | 25 | 1 | 454 |
-| After | 480 | 0 | 24 | 2 | 454 |
+| Second triage, same code | 480 | 0 | 24 | 2 | 454 |
+| After the fixes, scan only | 214 | not triaged | not triaged | not triaged | not triaged |
 
-With no true positives there was nothing to fix, so the code was identical in both runs and the only difference is the triager changing one verdict.
+With no true positives there was nothing to fix, so the code was identical in the first two runs and the only difference between them is the triager changing one verdict.
 
 The triager was right that `shell=True` in `src/sift/cli.py:59` only ever runs the operator's own `--test-command` and that test asserts are not defects, but it was wrong to dismiss `SIFT_BIN` in `hooks/post_edit.py:86` in the first run by claiming repository files cannot influence it, since project settings can set `env` once a workspace is trusted, and the second run correctly sent that finding to a person.
 
-**This is not a clean bill of health.** Only 25 of 480 clusters reached the triager, because of the packet cap, and test-file `S101` findings took 20 of those 25 slots. The other 454 are unreviewed, and most are `E501` line-length and assert findings. The secret finding at `src/sift/report.py:26` is a false alarm on a message constant, but sift rightly leaves that call to a person.
+The first run exposed that Ruff rated every `S` rule medium, so test asserts took 20 of the 25 packet slots, and that severity × tools let a two-tool low outrank a one-tool medium; `S101` is now low like Bandit's `B101`, the packet sorts by severity and then tools, and `E501` is no longer selected, which removed 276 clusters.
+
+**This is not a clean bill of health.** The 214 clusters are 1 high, 7 medium and 206 low, and they include 10 assert findings from the tests added with these fixes. All 7 non-secret high and medium clusters now fit in the 25-slot packet, but the fixed packet has not been triaged, and 188 low clusters, nearly all test asserts, would still be left out. The secret finding at `src/sift/report.py:26` is a false alarm on a message constant, but sift rightly leaves that call to a person.
 
 ## Reading the report
 
@@ -249,7 +256,7 @@ Java (Spring Boot first) and Python. These are the versions tested on:
 |---|---|---|---|
 | Semgrep CE | 1.184.0 | Java, Python | sift's own 9 rules |
 | PMD | 7.29.0 | Java | quickstart ruleset |
-| Ruff | 0.17.4 | Python | E, F, B, S rules |
+| Ruff | 0.17.4 | Python | F, B, S and E9 syntax errors; `E501` and other style rules are off |
 | Bandit | 1.9.4 | Python | security |
 | gitleaks | 8.30.1 | any | secrets |
 | Claude Code | 2.1.319 | | plugin host and triager |
